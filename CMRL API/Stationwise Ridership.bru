@@ -1,0 +1,16 @@
+meta {
+  name: Stationwise Ridership
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{api}}/PassengerFlow/stationData/{{day}}
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
