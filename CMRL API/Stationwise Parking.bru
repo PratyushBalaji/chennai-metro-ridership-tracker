@@ -1,0 +1,16 @@
+meta {
+  name: Stationwise Parking
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{api}}/parkingdashboard/stationData/{{day}}
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
