@@ -1,11 +1,12 @@
 # Chennai Metro Ridership Tracker
 
-Scripts to build and maintain a dataset of Chennai Metro's ridership through time. 
+Python-based scripts to build and maintain a dataset of Chennai Metro's ridership through time. Includes aggregate daily, hourly, and stationwise passenger flow statistics
+
 Inspired by a similar project for Bengaluru's Namma Metro : https://github.com/thecont1/namma-metro-ridership-tracker
 
 Temporarily, I will be using an internal (but publicly callable) CMRL API for data collection found through a simple network traffic analysis on CMRL's [official Passenger Flow Dashboard](https://commuters-data.chennaimetrorail.org/passengerflow).
 
-However, in the near future, I will replace this with a selenium (or alternative browser automation tool) based control flow that will scrape the same data from the website as if it were a real human tediously copying numbers from the dashboard, as the original namma metro ridership tracker does.
+However, in the near future, I will replace this with a selenium (or alternative browser automation tool) based control flow that will scrape the same data from the website as if it were a real human tediously copying numbers from the dashboard, as the original namma metro ridership tracker does. I will soon also be using GitHub Actions (CI/CD) to automate the data scraping daily instead of manually making commits (as the original project also did).
 
 ## Disclaimer
 
@@ -15,8 +16,42 @@ This project is intended **strictly** for **research, educational and informatio
 
 ## General Information
 
-The project directory contains [a Jupyter Notebook](./ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use the [requirements file](requirements.txt) to install any Python modules required in the notebook through pip.
+The [ridership.py](./ridership.py) file performs the data scraping, basic pre-processing, and daily data append to the actual CSVs. This is what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
 
-The [CMRL API](./CMRL%20API/) folder contains a Bruno collection you can use to hit the API endpoints and see the response, incase you want to fetch the data from the source. This collection can be exported to Postman, as cURL requests, etc.
+The CSV files contain the actual historical [daily](./ChennaiMetro_Daily_Ridership.csv), [hourly](./ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./ChennaiMetro_Station_Ridership.csv) ridership data. The collection was started on January 24th 2026.
 
-The `ridership.py` file will perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. This is what will be used to maintain the dataset
+The project directory also contains [a Jupyter Notebook](./ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use the [requirements file](requirements.txt) to install any Python modules required in the notebook through pip.
+
+The [CMRL API](./CMRL%20API/) folder contains a Bruno collection that was used for the API testing. You can use it to hit the API endpoints and view the JSON response, incase you want to fetch the data directly from the source or mess with the API. This collection can also be exported to Postman, as cURL requests, etc, for your convenience.
+
+## To-do List
+- [ ] Data validation and error-handling logic
+- [ ] Replace direct API calls with `selenium` (or alternative browser automation tool) based control flow
+- [ ] Finalise data storage schema
+- [ ] Automate data scraping using GitHub Actions (CI/CD)
+
+## Data Structure
+
+Currently, I'm contemplating the best way to store the data. The goal is to record the information in a manner that is both easy to understand and manipulate for a novice programmer, but also convenient for rigorous and robust data analyses by more experienced persons.
+
+### Current Design
+
+Each CSV file contains these generic columns, with some particulars depending on the file.
+
+**Global Columns :** Date, Total, \<All payment modes\> (Stored Value Card, NCMC Card, Whatsapp QR, etc) - Payment modes are sorted alphabetically for consistency
+
+**Specific Columns :**
+
+- Hourly : Hour (HH:MM format)
+- Station-wise : Line (01|02), Station (3-letter Unique Station Code)
+
+### Potential Alternatives
+
+The current data format is perfectly suitable for the daily aggregate appending, but not the best for the two other datasets. This is because while the daily append is 2-dimensional (Date, Pax / Mode of fare payment), the other datasets have a third variable (Hour of day | Station).
+
+This complicates things a bit since one day's data takes numerous columns to store in a CSV, one for each potential value of the third variable. ~24 rows for each hour of the day in the hourly dataset, and ~43 rows for each station in the station-wise dataset (Central (SCC) and Alandur (SAL) are repeated twice since the passenger count distinguishes between metro lines.)
+
+I am looking into alternative formats, however for the intended usage of this data largely for research, analysis, and visualisation, CSV is more than appropriate and any cons it may have are but minor hindrances. If there is another data format that satisfies all my criteria (comprehension at-a-glance, usable regardless of expertise, etc), I will use it, but this version will always be usable too.
+
+## License
+This project is licensed under the MIT License - see the LICENSE file for details.
