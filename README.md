@@ -18,3 +18,5 @@ This project is intended **strictly** for **research, educational and informatio
 The project directory contains [a Jupyter Notebook](./ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use the [requirements file](requirements.txt) to install any Python modules required in the notebook through pip.
 
 The [CMRL API](./CMRL%20API/) folder contains a Bruno collection you can use to hit the API endpoints and see the response, incase you want to fetch the data from the source. This collection can be exported to Postman, as cURL requests, etc.
+
+The `ridership.py` file will perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. This is what will be used to maintain the dataset
