@@ -5,6 +5,9 @@ on:
     - cron: '0 2 * * *' # 2am UTC (7:30am IST)
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   update-data:
     runs-on: ubuntu-latest
