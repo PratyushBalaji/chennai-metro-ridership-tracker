@@ -31,13 +31,18 @@ jobs:
       - name: Run ridership data collection
         run: python ridership.py
       
+      - name: Read dataset date from hourly CSV
+        shell: bash
+        run: |
+          API_DATE=$(tail -n 1 Ridership/ChennaiMetro_Hourly_Ridership.csv | awk -F',' '{print $1}')
+          echo "DATASET_DATE=$API_DATE" >> "$GITHUB_ENV"
+      
       - name: Commit ridership changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          DATE=$(date +%Y-%m-%d)
           git add Ridership/
-          git diff --cached --quiet || git commit -m "daily append $DATE - ridership"
+          git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - ridership"
 
       - name: Run parking data collection
         run: python parking.py
@@ -46,9 +51,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          DATE=$(date +%Y-%m-%d)
           git add Parking/
-          git diff --cached --quiet || git commit -m "daily append $DATE - parking"
+          git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - parking"
       
       - name: Push changes
         run: git push
