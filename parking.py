@@ -6,9 +6,9 @@ import os
 SETUP
 """
 
-DAILY_FILENAME = "ChennaiMetro_Daily_Parking.csv"
-HOURLY_FILENAME = "ChennaiMetro_Hourly_Parking.csv"
-STATION_FILENAME = "ChennaiMetro_Station_Parking.csv"
+DAILY_FILENAME = "Parking/ChennaiMetro_Daily_Parking.csv"
+HOURLY_FILENAME = "Parking/ChennaiMetro_Hourly_Parking.csv"
+STATION_FILENAME = "Parking/ChennaiMetro_Station_Parking.csv"
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/parkingdashboard/"
 DAY = "1"

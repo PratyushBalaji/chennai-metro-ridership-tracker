@@ -6,9 +6,9 @@ import os
 SETUP
 """
 
-DAILY_FILENAME = "ChennaiMetro_Daily_Ridership.csv"
-HOURLY_FILENAME = "ChennaiMetro_Hourly_Ridership.csv"
-STATION_FILENAME = "ChennaiMetro_Station_Ridership.csv"
+DAILY_FILENAME = "Ridership/ChennaiMetro_Daily_Ridership.csv"
+HOURLY_FILENAME = "Ridership/ChennaiMetro_Hourly_Ridership.csv"
+STATION_FILENAME = "Ridership/ChennaiMetro_Station_Ridership.csv"
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
 DAY = "1" # '1' for previous day, '0' for current day
