@@ -1,0 +1,51 @@
+name: Daily Data Update
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # 2am UTC (7:30am IST)
+  workflow_dispatch:
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas
+      
+      - name: Run ridership data collection
+        run: python ridership.py
+      
+      - name: Commit ridership changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DATE=$(date +%Y-%m-%d)
+          git add Ridership/
+          git diff --cached --quiet || git commit -m "daily append $DATE - ridership"
+
+      - name: Run parking data collection
+        run: python parking.py
+      
+      - name: Commit parking changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DATE=$(date +%Y-%m-%d)
+          git add Parking/
+          git diff --cached --quiet || git commit -m "daily append $DATE - parking"
+      
+      - name: Push changes
+        run: git push
