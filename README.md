@@ -28,7 +28,7 @@ The [CMRL API](./CMRL%20API/) folder contains a Bruno collection that was used f
 - [ ] Data validation and error-handling logic
 - [ ] Replace direct API calls with `selenium` (or alternative browser automation tool) based control flow
 - [ ] Finalise data storage schema
-- [ ] Automate data scraping using GitHub Actions (CI/CD)
+- [x] Automate data scraping using GitHub Actions (CI/CD)
 
 ## Data Structure
 
