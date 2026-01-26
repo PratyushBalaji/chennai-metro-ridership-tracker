@@ -137,9 +137,14 @@ daily_parking = get_daily_parking()
 hourly_parking = get_hourly_parking()
 station_parking = get_station_parking()
 
-# Extract date from ridership API
-ridership_hourly_response = requests.get(RIDERSHIP_HOURLY_URL).json()
-DATE = pd.to_datetime(ridership_hourly_response['categories'][0]).strftime('%Y-%m-%d')
+# Prefer date provided via environment (to avoid extra API calls in CI)
+_env_date = os.getenv("DATASET_DATE")
+if _env_date:
+    DATE = _env_date
+else:
+    # Fallback : Extract date from ridership API
+    ridership_hourly_response = requests.get(RIDERSHIP_HOURLY_URL).json()
+    DATE = pd.to_datetime(ridership_hourly_response['categories'][0]).strftime('%Y-%m-%d')
 
 """
 DATA VALIDATION
@@ -153,13 +158,10 @@ OUTPUT FORMATTING AND APPEND TO FILES
 
 # ===== DAILY CSV =====
 if DATE != last_daily_date:
-    # Extract vehicle types (all keys except totalVehicles)
     vehicle_types = sorted([key for key in daily_parking.keys() if key != 'totalVehicles'])
     
-    # Create headers
     daily_headers = ['Date', 'Total Vehicles'] + vehicle_types
     
-    # Build row with values
     daily_row = {
         'Date': DATE,
         'Total Vehicles': daily_parking['totalVehicles']
@@ -167,7 +169,6 @@ if DATE != last_daily_date:
     for vtype in vehicle_types:
         daily_row[vtype] = daily_parking[vtype]
     
-    # Create DataFrame and append
     daily_df_new = pd.DataFrame([daily_row])
     
     if last_daily_date is None:
@@ -181,13 +182,10 @@ else:
 
 # ===== HOURLY CSV =====
 if DATE != last_hourly_date:
-    # Extract vehicle types from series (exclude 'Total Vehicles')
     hourly_vehicle_types = sorted([key for key in hourly_parking['series'].keys() if key != 'Total Vehicles'])
     
-    # Create headers
     hourly_headers = ['Date', 'Hour', 'Total Vehicles'] + hourly_vehicle_types
     
-    # Build rows by iterating through times
     hourly_rows = []
     for i, time in enumerate(hourly_parking['times']):
         row = {
@@ -199,7 +197,6 @@ if DATE != last_hourly_date:
             row[vtype] = hourly_parking['series'][vtype][i]
         hourly_rows.append(row)
     
-    # Create DataFrame and append
     hourly_df_new = pd.DataFrame(hourly_rows)
     
     if last_hourly_date is None:
@@ -213,18 +210,14 @@ else:
 
 # ===== STATIONWISE CSV =====
 if DATE != last_station_date:
-    # Extract vehicle types from first line's series (should be consistent across lines)
     first_line_key = list(station_parking.keys())[0]
     station_vehicle_types = sorted([key for key in station_parking[first_line_key]['series'].keys() if key != 'Total Vehicles'])
     
-    # Create headers
     station_headers = ['Date', 'Line', 'Station', 'Total Vehicles'] + station_vehicle_types
     
-    # Build rows by iterating through lines and stations
     station_rows = []
     for line_number, line_data in station_parking.items():
         stations = line_data['stations']
-        # Get vehicle types for this specific line (in case they differ)
         line_vehicle_types = sorted([key for key in line_data['series'].keys() if key != 'Total Vehicles'])
         for i, station_code in enumerate(stations):
             row = {
@@ -237,7 +230,6 @@ if DATE != last_station_date:
                 row[vtype] = line_data['series'][vtype][i]
             station_rows.append(row)
     
-    # Create DataFrame and append
     station_df_new = pd.DataFrame(station_rows)
     
     if last_station_date is None:
