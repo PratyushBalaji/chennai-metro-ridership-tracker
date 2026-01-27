@@ -2,7 +2,7 @@ name: Daily Data Update
 
 on:
   schedule:
-    - cron: '0 2 * * *' # 2am UTC (7:30am IST)
+    - cron: '15 20 * * *' # 20:15 UTC (1:45am IST)
   workflow_dispatch:
 
 permissions:
