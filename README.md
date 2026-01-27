@@ -1,6 +1,8 @@
 # Chennai Metro Ridership Tracker
 
-Python-based scripts to build and maintain a dataset of Chennai Metro's ridership through time. Includes aggregate daily, hourly, and stationwise passenger flow statistics
+Python-based scripts to build and maintain a dataset of Chennai Metro's ridership through time. Includes aggregate daily, hourly, and stationwise passenger flow statistics.
+
+All data in this repository is scraped from publicly provided data by Chennai Metro Rail Limited. Their dashboards only contain data for upto one day in the past, so this repository serves to archive that data through time.
 
 Inspired by a similar project for Bengaluru's Namma Metro : https://github.com/thecont1/namma-metro-ridership-tracker
 
@@ -16,13 +18,19 @@ This project is intended **strictly** for **research, educational and informatio
 
 ## General Information
 
-The [ridership.py](./ridership.py) file performs the data scraping, basic pre-processing, and daily data append to the actual CSVs. This is what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
+The [ridership.py](./ridership.py) and [parking.py](./parking.py) files perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
 
-The CSV files contain the actual historical [daily](./ChennaiMetro_Daily_Ridership.csv), [hourly](./ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./ChennaiMetro_Station_Ridership.csv) ridership data. The collection was started on January 24th 2026.
+The CSV files contain the actual historical [daily](./ChennaiMetro_Daily_Ridership.csv), [hourly](./ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./ChennaiMetro_Station_Ridership.csv) ridership and parking data. The collection was started on January 24th 2026.
 
 The project directory also contains [a Jupyter Notebook](./ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use the [requirements file](requirements.txt) to install any Python modules required in the notebook through pip.
 
 The [CMRL API](./CMRL%20API/) folder contains a Bruno collection that was used for the API testing. You can use it to hit the API endpoints and view the JSON response, incase you want to fetch the data directly from the source or mess with the API. This collection can also be exported to Postman, as cURL requests, etc, for your convenience.
+
+Currently, the repository collates : 
+- Ridership Data (Daily, Hourly, Stationwise) broken down by fare payment method
+- Parking Data (Daily, Hourly, Stationwise) broken down by vehicle type
+
+As the primary intent is **ridership data collection**, despite other data being collected in this repository, the docs and programs often reference the ridership dataset and scripts. Most (if not all) of the information regarding data storage, script functionality, etc, is applicable across datasets and scripts, and the codebase is intended to be self-documenting.
 
 ## To-do List
 - [ ] Data validation and error-handling logic
