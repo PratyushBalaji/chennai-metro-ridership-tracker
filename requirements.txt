@@ -4,3 +4,4 @@ plotly
 requests
 seaborn
 nbformat
+folium
