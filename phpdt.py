@@ -25,7 +25,8 @@ ROUTE_MAPPING = {
 }
 
 def extract_station_code(corridor):
-    """Extract station codes from route key like 'seG_SCC2' -> ('SEG', 'SCC')"""    
+    """Extract station codes from route key like 'seG_SCC2' -> ('SEG', 'SCC')"""
+    corridor = "".join([i for i in corridor if i.isalpha() or i == '_'])
     parts = corridor.split("_")
     if len(parts) == 2:
         return parts[0].upper(), parts[1].upper()
