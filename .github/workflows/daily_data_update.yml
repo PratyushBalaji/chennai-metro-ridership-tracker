@@ -53,6 +53,16 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Parking/
           git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - parking"
+
+      - name: Run PHPDT data collection
+        run: python phpdt.py
+      
+      - name: Commit PHPDT changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add PHPDT/
+          git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - phpdt"
       
       - name: Push changes
         run: git push
