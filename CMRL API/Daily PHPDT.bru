@@ -1,0 +1,16 @@
+meta {
+  name: Daily PHPDT
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{api}}/PassengerFlow/PHPDTreport
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
