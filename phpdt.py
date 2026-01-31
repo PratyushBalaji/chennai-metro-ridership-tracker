@@ -9,11 +9,9 @@ SETUP
 DAILY_FILENAME = "PHPDT/ChennaiMetro_Daily_PHPDT.csv"
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
-DAY = "1"
 
 PHPDT_URL = BASE_URL + "PHPDTreport/"
 
-# Mapping of route names to line numbers and directions
 ROUTE_MAPPING = {
     # Line 1 (Blue Line)
     "saPtoSWDViewModel": {"line": "1", "direction": "UP", "from": "SAP", "to": "SWD"},
@@ -26,7 +24,7 @@ ROUTE_MAPPING = {
 
 def extract_station_code(corridor):
     """Extract station codes from route key like 'seG_SCC2' -> ('SEG', 'SCC')"""
-    corridor = "".join([i for i in corridor if i.isalpha() or i == '_'])
+    corridor = "".join([i for i in corridor if i.isalpha() or i == '_']) # remove non-alpha chars
     parts = corridor.split("_")
     if len(parts) == 2:
         return parts[0].upper(), parts[1].upper()
@@ -81,7 +79,6 @@ for route_key, route_info in ROUTE_MAPPING.items():
         continue
     
     for entry in route_data:
-        # Extract date and time
         from_datetime = pd.to_datetime(entry['transfromdate'])
         to_datetime = pd.to_datetime(entry['transtodate'])
         
@@ -92,18 +89,14 @@ for route_key, route_info in ROUTE_MAPPING.items():
         line = route_info['line']
         direction = route_info['direction']
         
-        # Process all corridor entries (skip the first entry which has count 0)
-        # The route_key tells us the direction endpoints
-        # We need to extract all intermediate corridors
-        
-        # Get all corridor keys from the entry (they follow pattern like 'saP_SME', 'smE_SOT', etc.)
+        # Get all entries in the format : <station1>_<station2>
         corridor_keys = [k for k in entry.keys() if '_' in k]
         
-        for i, corridor_key in enumerate(corridor_keys):            
-            corridor_value = entry[corridor_key]
+        for key in corridor_keys:            
+            corridor_value = entry[key]
             
             # Extract station codes from corridor key
-            from_station, to_station = extract_station_code(corridor_key)
+            from_station, to_station = extract_station_code(key)
             
             if from_station and to_station:
                 row = {
@@ -117,15 +110,16 @@ for route_key, route_info in ROUTE_MAPPING.items():
                     'PHPDT': corridor_value
                 }
                 phpdt_rows.append(row)
+            else:
+                print(f"Error: Could not extract stations from corridor key '{key}'")
 
 if phpdt_rows:
-    # Extract unique date from first row
-    DATE = phpdt_rows[0]['Date']
+    DATE = phpdt_rows[0]['Date'] # current date
     
-    if DATE != last_phpdt_date:  # if not already at latest date
+    if DATE != last_phpdt_date: # if not already at latest date
         phpdt_df_new = pd.DataFrame(phpdt_rows)
         
-        if last_phpdt_date is None:  # no first entry
+        if last_phpdt_date is None: # no first entry / no file
             phpdt_df_new.to_csv(DAILY_FILENAME, index=False, header=True)
             print(f"Created {DAILY_FILENAME} with {len(phpdt_rows)} entries for {DATE}")
         else:  # else append
