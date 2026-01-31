@@ -18,9 +18,9 @@ This project is intended **strictly** for **research, educational and informatio
 
 ## General Information
 
-The [ridership.py](./ridership.py) and [parking.py](./parking.py) files perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
+The [ridership.py](./ridership.py), [parking.py](./parking.py) and [phpdt.py](./phpdt.py) files perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
 
-The CSV files contain the actual historical [daily](./ChennaiMetro_Daily_Ridership.csv), [hourly](./ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./ChennaiMetro_Station_Ridership.csv) ridership and parking data. The collection was started on January 24th 2026.
+The CSV files contain the actual historical [daily](./ChennaiMetro_Daily_Ridership.csv), [hourly](./ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./ChennaiMetro_Station_Ridership.csv) ridership, parking and PHPDT data. The collection was started on January 24th 2026.
 
 The project directory also contains [a Jupyter Notebook](./ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use the [requirements file](requirements.txt) to install any Python modules required in the notebook through pip.
 
@@ -29,8 +29,9 @@ The [CMRL API](./CMRL%20API/) folder contains a Bruno collection that was used f
 Currently, the repository collates : 
 - Ridership Data (Daily, Hourly, Stationwise) broken down by fare payment method
 - Parking Data (Daily, Hourly, Stationwise) broken down by vehicle type
+- Peak Hour Per Direction Traffic (PHPDT) ridership data (Daily) for each adjacent station pair
 
-As the primary intent is **ridership data collection**, despite other data being collected in this repository, the docs and programs often reference the ridership dataset and scripts. Most (if not all) of the information regarding data storage, script functionality, etc, is applicable across datasets and scripts, and the codebase is intended to be self-documenting.
+As the primary intent is **ridership data collection**, despite other data being collected in this repository, the docs and programs often reference the ridership dataset and scripts. Most (if not all) of the information regarding data storage, script functionality, etc, is applicable across datasets and scripts, and the codebase is intended to be both self-documenting and consistent.
 
 ## To-do List
 - [ ] Data validation and error-handling logic
