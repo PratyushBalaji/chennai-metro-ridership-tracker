@@ -96,13 +96,9 @@ for route_key, route_info in ROUTE_MAPPING.items():
         # We need to extract all intermediate corridors
         
         # Get all corridor keys from the entry (they follow pattern like 'saP_SME', 'smE_SOT', etc.)
-        corridor_keys = [k for k in entry.keys() if '_' in k and k not in ['transfromdate', 'transtodate']]
+        corridor_keys = [k for k in entry.keys() if '_' in k]
         
-        for i, corridor_key in enumerate(corridor_keys):
-            # Skip the first entry (source station with 0 count)
-            if i == 0:
-                continue
-            
+        for i, corridor_key in enumerate(corridor_keys):            
             corridor_value = entry[corridor_key]
             
             # Extract station codes from corridor key
