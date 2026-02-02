@@ -64,5 +64,7 @@ jobs:
           git add PHPDT/
           git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - phpdt"
       
-      - name: Push changes
-        run: git push
+      - name: Pull latest changes and push
+        run: |
+          git pull --rebase origin main
+          git push
