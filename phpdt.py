@@ -72,10 +72,12 @@ phpdt_rows = []
 
 for route_key, route_info in ROUTE_MAPPING.items():
     if route_key not in phpdt_response:
+        print(f"Warning: Route key '{route_key}' not found in PHPDT response")
         continue
     
     route_data = phpdt_response[route_key]
-    if not isinstance(route_data, list) or len(route_data) == 0:
+    if not route_data:
+        print(f"Warning: No data available for route key '{route_key}'")
         continue
     
     for entry in route_data:
