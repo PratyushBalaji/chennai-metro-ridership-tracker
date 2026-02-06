@@ -45,6 +45,6 @@ jobs:
       
       - name: Commit and Push PHPDT changes
         run: |
-          git add Ridership/
+          git add PHPDT/
           git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - phpdt"
           git push
