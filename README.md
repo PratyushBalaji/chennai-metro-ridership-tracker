@@ -8,7 +8,7 @@ Inspired by a similar project for Bengaluru's Namma Metro : https://github.com/t
 
 Temporarily, I will be using an internal (but publicly callable) CMRL API for data collection found through a simple network traffic analysis on CMRL's [official Passenger Flow Dashboard](https://commuters-data.chennaimetrorail.org/passengerflow).
 
-However, in the near future, I will replace this with a selenium (or alternative browser automation tool) based control flow that will scrape the same data from the website as if it were a real human tediously copying numbers from the dashboard, as the original namma metro ridership tracker does. I will soon also be using GitHub Actions (CI/CD) to automate the data scraping daily instead of manually making commits (as the original project also did).
+However, in the near future, I will replace this with a selenium (or alternative browser automation tool) based control flow that will scrape the same data from the website as if it were a real human tediously copying numbers from the dashboard, as the original namma metro ridership tracker does.
 
 ## Disclaimer
 
