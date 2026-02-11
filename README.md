@@ -10,6 +10,8 @@ Temporarily, I will be using an internal (but publicly callable) CMRL API for da
 
 However, in the near future, I will replace this with a selenium (or alternative browser automation tool) based control flow that will scrape the same data from the website as if it were a real human tediously copying numbers from the dashboard, as the original namma metro ridership tracker does.
 
+**Contributions are welcome! Feel free to fork, raise issues, or start discussions**
+
 ## Disclaimer
 
 This project is intended **strictly** for **research, educational and informational purposes**. The data and API usage demonstrated here and in related repositories are meant solely to help understand how CMRL metro services function and retrieve data. Any use of this information in personal or public applications may place unintended load on CMRL servers and disrupt official services.
@@ -36,7 +38,8 @@ As the primary intent is **ridership data collection**, despite other data being
 ## To-do List
 - [ ] Data validation and error-handling logic
 - [ ] Replace direct API calls with `selenium` (or alternative browser automation tool) based control flow
-- [ ] Finalise data storage schema
+- [ ] Generalised algorithm to future-proof scripts as new lines / stations open
+- [x] Finalise data storage schema
 - [x] Automate data scraping using GitHub Actions (CI/CD)
 
 ## Data Structure
