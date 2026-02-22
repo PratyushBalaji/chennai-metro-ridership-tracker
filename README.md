@@ -12,11 +12,19 @@ However, in the near future, I will replace this with a selenium (or alternative
 
 **Contributions are welcome! Feel free to fork, raise issues, or start discussions**
 
-## Disclaimer
+## Data notice / third-party content
 
 This project is intended **strictly** for **research, educational and informational purposes**. The data and API usage demonstrated here and in related repositories are meant solely to help understand how CMRL metro services function and retrieve data. Any use of this information in personal or public applications may place unintended load on CMRL servers and disrupt official services.
 
 **I do not accept any responsibility or liability for consequences arising from the misuse of this data or API. Use at your own discretion and respect the intended limits of the service.**
+
+This repository includes scripts and workflows to collect and archive daily passenger flow data published by Chennai Metro Rail Limited (CMRL) at :
+https://commuters-data.chennaimetrorail.org/passengerflow and other related sites. The data is lawfully copyrighted by **Chennai Metro Rail Limited**.
+
+Accordingly:
+- The MIT License in this repository applies solely to the code in this repo (scripts, notebooks, etc.).
+- It does **not** grant any rights to the underlying CMRL-published data (including any CSV exports, archived snapshots, or reproduced tables), which are be subject to CMRL’s copyright and terms.
+- If you wish to reuse or redistribute the data, you are responsible for ensuring you have the necessary permissions from CMRL or that your use is otherwise lawful.
 
 ## General Information
 
@@ -66,4 +74,4 @@ This complicates things a bit since one day's data takes numerous columns to sto
 I am looking into alternative formats, however for the intended usage of this data largely for research, analysis, and visualisation, CSV is more than appropriate and any cons it may have are but minor hindrances. If there is another data format that satisfies all my criteria (comprehension at-a-glance, usable regardless of expertise, etc), I will use it, but this version will always be usable too.
 
 ## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project and its Author's contributions are licensed under the MIT License - see the LICENSE file for details. This license does **not** grant any additional rights to the underlying data which are subject to CMRL's copyright terms.
