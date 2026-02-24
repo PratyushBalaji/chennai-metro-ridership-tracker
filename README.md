@@ -12,6 +12,8 @@ However, in the near future, I will replace this with a selenium (or alternative
 
 **Contributions are welcome! Feel free to fork, raise issues, or start discussions**
 
+I am also working on a sister project to visualise this data and extend the target audience from devs and researchers to everyday metro commuters! Check it out : https://github.com/PratyushBalaji/chennai-metro-ridership-visualisation
+
 ## Data notice / third-party content
 
 This project is intended **strictly** for **research, educational and informational purposes**. The data and API usage demonstrated here and in related repositories are meant solely to help understand how CMRL metro services function and retrieve data. Any use of this information in personal or public applications may place unintended load on CMRL servers and disrupt official services.
