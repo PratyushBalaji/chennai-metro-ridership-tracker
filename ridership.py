@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 import requests
 
+from collector.anomalies import ANOMALY_EXIT_CODE, ANOMALY_LOG_PATH, append_anomaly_record, has_anomalies
 from collector.schemas import RIDERSHIP_DAILY, RIDERSHIP_HOURLY, RIDERSHIP_STATION
 from collector.upsert import UpsertResult, upsert_csv
 
@@ -145,7 +146,12 @@ def normalize_station(station_response: list[dict[str, Any]], date: str) -> pd.D
     return pd.DataFrame(rows, columns=["Date", "Line", "Station", "Total", *sorted(payment_methods)])
 
 
-def collect_ridership(day: str = "1", output_dir: str | Path = ".", dry_run: bool = False) -> None:
+def collect_ridership(
+    day: str = "1",
+    output_dir: str | Path = ".",
+    dry_run: bool = False,
+    anomaly_log: str | Path = ANOMALY_LOG_PATH,
+) -> list[UpsertResult]:
     daily_payload, hourly_payload, station_payload = fetch_ridership_payloads(day)
     date = extract_dataset_date(hourly_payload)
 
@@ -155,19 +161,60 @@ def collect_ridership(day: str = "1", output_dir: str | Path = ".", dry_run: boo
         (Path(output_dir) / STATION_FILENAME, normalize_station(station_payload, date), RIDERSHIP_STATION),
     ]
 
+    results: list[UpsertResult] = []
     for path, dataframe, schema in datasets:
         if dry_run:
             print(f"Dry run: prepared {len(dataframe)} {schema.name} rows for {date}")
             continue
 
         result = upsert_csv(path, dataframe, schema)
+        results.append(result)
         print(_format_result(schema.name, date, result))
+
+    if results and has_anomalies(results):
+        log_path = _resolve_output_path(output_dir, anomaly_log)
+        append_anomaly_record(
+            log_path,
+            source="ridership",
+            day=day,
+            dataset_date=date,
+            results=results,
+            payload_summary=summarize_payloads(daily_payload, hourly_payload, station_payload),
+        )
+        print(f"anomaly log: {log_path}")
+
+    return results
+
+
+def summarize_payloads(
+    daily_payload: dict[str, Any],
+    hourly_payload: dict[str, Any],
+    station_payload: list[dict[str, Any]],
+) -> dict[str, Any]:
+    categories = hourly_payload.get("categories") or []
+    return {
+        "daily_total": daily_payload.get("totalTickets"),
+        "daily_fields": len(daily_payload),
+        "hourly_points": len(categories),
+        "hourly_start": categories[0] if categories else None,
+        "hourly_end": categories[-1] if categories else None,
+        "station_lines": len(station_payload),
+        "station_count": sum(len(line.get("categories") or []) for line in station_payload),
+    }
+
+
+def _resolve_output_path(output_dir: str | Path, path: str | Path) -> Path:
+    log_path = Path(path)
+    if log_path.is_absolute():
+        return log_path
+    return Path(output_dir) / log_path
 
 
 def _format_result(dataset_name: str, date: str, result: UpsertResult) -> str:
     return (
         f"{dataset_name} {date}: "
-        f"{result.inserted} inserted, {result.updated} updated, {result.conflicts} conflicts"
+        f"{result.inserted} inserted, {result.updated} updated, "
+        f"{result.anomalies} anomalies, {result.conflicts} conflicts"
     )
 
 
@@ -176,12 +223,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--day", default="1", choices=("0", "1"), help="CMRL day selector: 0=today, 1=yesterday")
     parser.add_argument("--output-dir", default=".", help="Directory containing the Ridership output folder")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and normalize without writing CSV files")
+    parser.add_argument("--strict", action="store_true", help="Use strict upsert checks")
+    parser.add_argument("--anomaly-log", default=ANOMALY_LOG_PATH, help="Append-only JSONL anomaly log path")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    collect_ridership(day=args.day, output_dir=args.output_dir, dry_run=args.dry_run)
+    results = collect_ridership(
+        day=args.day,
+        output_dir=args.output_dir,
+        dry_run=args.dry_run,
+        anomaly_log=args.anomaly_log,
+    )
+    if has_anomalies(results):
+        raise SystemExit(ANOMALY_EXIT_CODE)
 
 
 if __name__ == "__main__":
