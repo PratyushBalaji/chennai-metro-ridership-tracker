@@ -90,8 +90,8 @@ def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetS
         _require_unique_keys(existing, schema)
 
     all_columns = _ordered_union(existing.columns, incoming.columns)
-    existing = existing.reindex(columns=all_columns)
-    incoming = incoming.reindex(columns=all_columns)
+    existing = existing.reindex(columns=all_columns).astype(object)
+    incoming = incoming.reindex(columns=all_columns).astype(object)
 
     if existing.empty:
         result_df = sort_rows(incoming, schema)
