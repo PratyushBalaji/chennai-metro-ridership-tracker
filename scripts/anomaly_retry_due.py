@@ -5,7 +5,7 @@ import os
 from datetime import datetime, time, timezone
 from pathlib import Path
 
-from collector.anomalies import IST, ANOMALY_LOG_PATH, read_last_record
+from collector.anomalies import ANOMALY_LOG_PATH, IST, read_last_record
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,7 +57,7 @@ def main() -> None:
     outputs["age_minutes"] = str(age_minutes)
 
     cutoff = parse_cutoff(args.cutoff_ist)
-    now_ist = now_utc.astimezone(IST).time()
+    now_ist = now_utc.astimezone(IST).time().replace(tzinfo=None)
     if now_ist >= cutoff:
         outputs["expired"] = "true"
         write_outputs(outputs)
@@ -82,7 +82,7 @@ def parse_utc(value: str) -> datetime:
 
 def parse_cutoff(value: str) -> time:
     hour, minute = value.split(":", 1)
-    return time(int(hour), int(minute), tzinfo=IST)
+    return time(int(hour), int(minute))
 
 
 def write_outputs(outputs: dict[str, str]) -> None:
