@@ -1,237 +1,188 @@
-import requests
-import pandas as pd
-import os
+from __future__ import annotations
 
-"""
-SETUP
-"""
+import argparse
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import requests
+
+from collector.schemas import RIDERSHIP_DAILY, RIDERSHIP_HOURLY, RIDERSHIP_STATION
+from collector.upsert import UpsertResult, upsert_csv
+
 
 DAILY_FILENAME = "Ridership/ChennaiMetro_Daily_Ridership.csv"
 HOURLY_FILENAME = "Ridership/ChennaiMetro_Hourly_Ridership.csv"
 STATION_FILENAME = "Ridership/ChennaiMetro_Station_Ridership.csv"
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
-DAY = "1" # '1' for previous day, '0' for current day
-# Note : Depending on time of day, /0 may have incomplete data. Since we would rather deal with complete data, we use /1.
-# If we use /0 and data is incomplete, the rest of that day's data won't be updated until incomplete data is manually removed from CSVs.
-# (With current validation logic)
+REQUEST_TIMEOUT_SECONDS = 30
 
-DAILY_TICKET_COUNT_URL = BASE_URL + "allTicketCount/" + DAY
-HOURLY_PASSENGER_DATA_URL = BASE_URL + "hourlybaseddata/" + DAY
-STATION_FLOW_DATA_URL = BASE_URL + "stationData/" + DAY
-
-STATION_CODES = { # one-to-one mapping -> more compact and unambiguous
+STATION_CODES = {
     # Blue Line
-    "WIMCO NAGAR DEPOT":"SWD",
-    "WIMCO NAGAR METRO":"SWN",
-    "THIRUVOTRIYUR METRO":"STV",
-    "THIRUVOTRIYUR THERADI METRO":"STT",
-    "KALADIPET METRO":"SKP",
-    "TOLLGATE METRO":"STG",
-    "NEW WASHERMENPET METRO":"SNW",
-    "TONDIARPET METRO":"STR",
-    "THIYAGARAYA COLLEGE METRO":"STC",
-    "WASHERMANPET":"SWA",
-    "MANNADI":"SMA",
-    "HIGH COURT":"SHC",
-    "GOVERNMENT ESTATE":"SGE",
-    "LIC":"SLI",
-    "THOUSAND LIGHT":"STL",
-    "AG-DMS":"SGM",
-    "TEYNAMPET":"STE",
-    "NANDANAM":"SCR",
-    "SAIDAPET":"SSA",
-    "LITTLE MOUNT":"SLM",
-    "GUINDY":"SGU",
-    "OTA - NANGANALLUR ROAD":"SOT",
-    "MEENAMBAKKAM":"SME",
-    "CHENNAI AIRPORT":"SAP",
-
+    "WIMCO NAGAR DEPOT": "SWD",
+    "WIMCO NAGAR METRO": "SWN",
+    "THIRUVOTRIYUR METRO": "STV",
+    "THIRUVOTRIYUR THERADI METRO": "STT",
+    "KALADIPET METRO": "SKP",
+    "TOLLGATE METRO": "STG",
+    "NEW WASHERMENPET METRO": "SNW",
+    "TONDIARPET METRO": "STR",
+    "THIYAGARAYA COLLEGE METRO": "STC",
+    "WASHERMANPET": "SWA",
+    "MANNADI": "SMA",
+    "HIGH COURT": "SHC",
+    "GOVERNMENT ESTATE": "SGE",
+    "LIC": "SLI",
+    "THOUSAND LIGHT": "STL",
+    "AG-DMS": "SGM",
+    "TEYNAMPET": "STE",
+    "NANDANAM": "SCR",
+    "SAIDAPET": "SSA",
+    "LITTLE MOUNT": "SLM",
+    "GUINDY": "SGU",
+    "OTA - NANGANALLUR ROAD": "SOT",
+    "MEENAMBAKKAM": "SME",
+    "CHENNAI AIRPORT": "SAP",
     # Green Line
-    "EGMORE":"SEG",
-    "NEHRU PARK":"SNP",
-    "KILPAUK":"SKM",
-    "PACHAIAPPA S COLLEGE":"SPC",
-    "SHENOY NAGAR":"SSN",
-    "ANNA NAGAR EAST":"SAE",
-    "ANNA NAGAR TOWER":"SAT",
-    "THIRUMANGALAM":"STI",
-    "KOYAMBEDU":"SKO",
-    "CMBT":"SCM",
-    "ARUMBAKKAM":"SAR",
-    "VADAPALANI":"SVA",
-    "ASHOK NAGAR":"SAN",
-    "EKKATTUTHANGAL":"SSI",
-    "St. THOMAS MOUNT":"SMM",
-
-    # Interchange station
-    "CENTRAL  METRO":"SCC",
-    "ALANDUR":"SAL",
+    "EGMORE": "SEG",
+    "NEHRU PARK": "SNP",
+    "KILPAUK": "SKM",
+    "PACHAIAPPA S COLLEGE": "SPC",
+    "SHENOY NAGAR": "SSN",
+    "ANNA NAGAR EAST": "SAE",
+    "ANNA NAGAR TOWER": "SAT",
+    "THIRUMANGALAM": "STI",
+    "KOYAMBEDU": "SKO",
+    "CMBT": "SCM",
+    "ARUMBAKKAM": "SAR",
+    "VADAPALANI": "SVA",
+    "ASHOK NAGAR": "SAN",
+    "EKKATTUTHANGAL": "SSI",
+    "St. THOMAS MOUNT": "SMM",
+    # Interchange stations
+    "CENTRAL  METRO": "SCC",
+    "ALANDUR": "SAL",
 }
 
-def convert_station_code(station_name):
+
+def endpoint(path: str, day: str) -> str:
+    return f"{BASE_URL}{path}/{day}"
+
+
+def convert_station_code(station_name: str) -> str:
     return STATION_CODES.get(station_name, station_name)
 
-"""
-CSV VALIDATION
-"""
 
-last_daily_date = None
-last_hourly_date = None
-last_station_date = None
+def fetch_json(url: str) -> Any:
+    response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    return response.json()
 
-if not os.path.exists(DAILY_FILENAME):
-    pd.DataFrame().to_csv(DAILY_FILENAME, index=False)
-else:
-    try:
-        daily_df = pd.read_csv(DAILY_FILENAME)
-        if not daily_df.empty:
-            last_daily_date = daily_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
 
-if not os.path.exists(HOURLY_FILENAME):
-    pd.DataFrame().to_csv(HOURLY_FILENAME, index=False)
-else:
-    try:
-        hourly_df = pd.read_csv(HOURLY_FILENAME)
-        if not hourly_df.empty:
-            last_hourly_date = hourly_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
+def fetch_ridership_payloads(day: str) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    daily = fetch_json(endpoint("allTicketCount", day))
+    hourly = fetch_json(endpoint("hourlybaseddata", day))
+    station = fetch_json(endpoint("stationData", day))
+    return daily, hourly, station
 
-if not os.path.exists(STATION_FILENAME):
-    pd.DataFrame().to_csv(STATION_FILENAME, index=False)
-else:
-    try:
-        station_df = pd.read_csv(STATION_FILENAME)
-        if not station_df.empty:
-            last_station_date = station_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
 
-"""
-DATA COLLECTION AND BASIC PROCESSING
-"""
+def extract_dataset_date(hourly_response: dict[str, Any]) -> str:
+    categories = hourly_response.get("categories") or []
+    if not categories:
+        raise ValueError("Hourly ridership response has no timestamp categories")
+    return pd.to_datetime(categories[0]).strftime("%Y-%m-%d")
 
-def get_daily_ticket_count():
-    return requests.get(DAILY_TICKET_COUNT_URL).json()
 
-def get_hourly_passenger_data():
-    response = requests.get(HOURLY_PASSENGER_DATA_URL).json()
-    hourly_data = {
-        'date': pd.to_datetime(response['categories'][0]).strftime('%Y-%m-%d'),
-        'timestamps': [pd.to_datetime(ts).strftime('%H:%M') for ts in response['categories']],
-        'series': {s['name']: s['data'] for s in response['series']}
+def normalize_daily(daily_tickets: dict[str, Any], date: str) -> pd.DataFrame:
+    payment_methods = sorted(key for key in daily_tickets if key.startswith("noOf"))
+    row = {
+        "Date": date,
+        "Total": daily_tickets["totalTickets"],
     }
-    return hourly_data
+    row.update({method: daily_tickets[method] for method in payment_methods})
+    return pd.DataFrame([row], columns=["Date", "Total", *payment_methods])
 
-def get_station_flow_data():
-    response = requests.get(STATION_FLOW_DATA_URL).json()
-    station_data = {}
-    for line_data in response:
-        line_number = line_data['line']
-        station_data[line_number] = {
-            'stations': list(map(convert_station_code, line_data['categories'])),
-            'series': {s['name']: s['data'] for s in line_data['series']}
-        }
-    return station_data
 
-daily_tickets = get_daily_ticket_count()
-hourly_passengers = get_hourly_passenger_data()
-station_flows = get_station_flow_data()
+def normalize_hourly(hourly_response: dict[str, Any]) -> pd.DataFrame:
+    date = extract_dataset_date(hourly_response)
+    timestamps = [pd.to_datetime(timestamp).strftime("%H:%M") for timestamp in hourly_response["categories"]]
+    series = {entry["name"]: entry["data"] for entry in hourly_response["series"]}
+    payment_methods = sorted(method for method in series if method != "Total")
 
-DATE = hourly_passengers['date'] # yyyy-mm-dd
-
-"""
-DATA VALIDATION
-"""
-
-# Skipped for now
-
-"""
-OUTPUT FORMATTING AND APPEND TO FILES
-"""
-
-# DAILY CSV
-if DATE != last_daily_date: # if not already at latest date
-    payment_methods = sorted([key for key in daily_tickets.keys() if key.startswith('noOf')])
-    daily_headers = ['Date', 'Total'] + payment_methods
-    
-    daily_row = {
-        'Date': DATE,
-        'Total': daily_tickets['totalTickets']
-    }
-    for method in payment_methods:
-        daily_row[method] = daily_tickets[method]
-    
-    daily_df_new = pd.DataFrame([daily_row])
-    
-    if last_daily_date is None: # no first entry
-        daily_df_new.to_csv(DAILY_FILENAME, index=False, header=True)
-        print(f"Created {DAILY_FILENAME} with data for {DATE}") # create new file
-    else: # else append
-        daily_df_new.to_csv(DAILY_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended daily data for {DATE}")
-else:
-    print(f"Daily data for {DATE} already exists. Skipping.")
-
-# HOURLY CSV
-if DATE != last_hourly_date:
-    hourly_payment_methods = sorted([key for key in hourly_passengers['series'].keys() if key != 'Total']) # total first
-    
-    hourly_headers = ['Date', 'Hour', 'Total'] + hourly_payment_methods
-    
-    hourly_rows = []
-    for i, timestamp in enumerate(hourly_passengers['timestamps']):
+    rows = []
+    for index, timestamp in enumerate(timestamps):
         row = {
-            'Date': DATE,
-            'Hour': timestamp,
-            'Total': hourly_passengers['series']['Total'][i]
+            "Date": date,
+            "Hour": timestamp,
+            "Total": series["Total"][index],
         }
-        for method in hourly_payment_methods:
-            row[method] = hourly_passengers['series'][method][i]
-        hourly_rows.append(row)
-    
-    hourly_df_new = pd.DataFrame(hourly_rows)
-    
-    if last_hourly_date is None:
-        hourly_df_new.to_csv(HOURLY_FILENAME, index=False, header=True)
-        print(f"Created {HOURLY_FILENAME} with {len(hourly_rows)} entries for {DATE}")
-    else:
-        hourly_df_new.to_csv(HOURLY_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended {len(hourly_rows)} hourly entries for {DATE}")
-else:
-    print(f"Hourly data for {DATE} already exists. Skipping.")
+        row.update({method: series[method][index] for method in payment_methods})
+        rows.append(row)
 
-# STATIONWISE CSV
-if DATE != last_station_date:
-    first_line_key = list(station_flows.keys())[0]
-    station_payment_methods = sorted([key for key in station_flows[first_line_key]['series'].keys() if key != 'Total'])
-    
-    station_headers = ['Date', 'Line', 'Station', 'Total'] + station_payment_methods
-    
-    station_rows = []
-    for line_number, line_data in station_flows.items():
-        stations = line_data['stations']
-        for i, station_code in enumerate(stations):
+    return pd.DataFrame(rows, columns=["Date", "Hour", "Total", *payment_methods])
+
+
+def normalize_station(station_response: list[dict[str, Any]], date: str) -> pd.DataFrame:
+    rows = []
+    payment_methods: set[str] = set()
+
+    for line_data in station_response:
+        series = {entry["name"]: entry["data"] for entry in line_data["series"]}
+        line_payment_methods = sorted(method for method in series if method != "Total")
+        payment_methods.update(line_payment_methods)
+
+        for index, station_name in enumerate(line_data["categories"]):
             row = {
-                'Date': DATE,
-                'Line': line_number,
-                'Station': station_code,
-                'Total': line_data['series']['Total'][i]
+                "Date": date,
+                "Line": line_data["line"],
+                "Station": convert_station_code(station_name),
+                "Total": series["Total"][index],
             }
-            for method in station_payment_methods:
-                row[method] = line_data['series'][method][i]
-            station_rows.append(row)
-    
-    station_df_new = pd.DataFrame(station_rows)
-    
-    if last_station_date is None:
-        station_df_new.to_csv(STATION_FILENAME, index=False, header=True)
-        print(f"Created {STATION_FILENAME} with {len(station_rows)} entries for {DATE}")
-    else:
-        station_df_new.to_csv(STATION_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended {len(station_rows)} station entries for {DATE}")
-else:
-    print(f"Station data for {DATE} already exists. Skipping.")
+            row.update({method: series[method][index] for method in line_payment_methods})
+            rows.append(row)
+
+    return pd.DataFrame(rows, columns=["Date", "Line", "Station", "Total", *sorted(payment_methods)])
+
+
+def collect_ridership(day: str = "1", output_dir: str | Path = ".", dry_run: bool = False) -> None:
+    daily_payload, hourly_payload, station_payload = fetch_ridership_payloads(day)
+    date = extract_dataset_date(hourly_payload)
+
+    datasets = [
+        (Path(output_dir) / DAILY_FILENAME, normalize_daily(daily_payload, date), RIDERSHIP_DAILY),
+        (Path(output_dir) / HOURLY_FILENAME, normalize_hourly(hourly_payload), RIDERSHIP_HOURLY),
+        (Path(output_dir) / STATION_FILENAME, normalize_station(station_payload, date), RIDERSHIP_STATION),
+    ]
+
+    for path, dataframe, schema in datasets:
+        if dry_run:
+            print(f"Dry run: prepared {len(dataframe)} {schema.name} rows for {date}")
+            continue
+
+        result = upsert_csv(path, dataframe, schema)
+        print(_format_result(schema.name, date, result))
+
+
+def _format_result(dataset_name: str, date: str, result: UpsertResult) -> str:
+    return (
+        f"{dataset_name} {date}: "
+        f"{result.inserted} inserted, {result.updated} updated, {result.conflicts} conflicts"
+    )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Collect Chennai Metro ridership data.")
+    parser.add_argument("--day", default="1", choices=("0", "1"), help="CMRL day selector: 0=today, 1=yesterday")
+    parser.add_argument("--output-dir", default=".", help="Directory containing the Ridership output folder")
+    parser.add_argument("--dry-run", action="store_true", help="Fetch and normalize without writing CSV files")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    collect_ridership(day=args.day, output_dir=args.output_dir, dry_run=args.dry_run)
+
+
+if __name__ == "__main__":
+    main()
