@@ -38,7 +38,11 @@ class UpsertResult:
 
     @property
     def updated(self) -> int:
-        return sum(decision.action in {"updated", "updated_with_conflicts"} for decision in self.decisions)
+        return sum(decision.action == "updated" for decision in self.decisions)
+
+    @property
+    def anomalies(self) -> int:
+        return sum(decision.action == "anomaly" for decision in self.decisions)
 
     @property
     def conflicts(self) -> int:
@@ -123,7 +127,7 @@ def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetS
 
         row_index = index_by_key[key_tuple]
         existing_row = result_df.loc[row_index]
-        updated_columns: list[str] = []
+        updates: dict[str, Any] = {}
         conflicts: list[CellConflict] = []
 
         for column in all_columns:
@@ -137,8 +141,11 @@ def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetS
                 continue
 
             if _is_empty(existing_value) and not _is_empty(incoming_value):
-                result_df.at[row_index, column] = incoming_value
-                updated_columns.append(column)
+                updates[column] = incoming_value
+                continue
+
+            if not _is_empty(existing_value) and _is_empty(incoming_value):
+                conflicts.append(CellConflict(column, existing_value, incoming_value, "incoming_value_missing"))
                 continue
 
             existing_number = _to_number(existing_value)
@@ -146,8 +153,7 @@ def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetS
 
             if existing_number is not None and incoming_number is not None:
                 if incoming_number > existing_number:
-                    result_df.at[row_index, column] = incoming_value
-                    updated_columns.append(column)
+                    updates[column] = incoming_value
                 elif incoming_number < existing_number:
                     conflicts.append(
                         CellConflict(column, existing_value, incoming_value, "incoming_value_decreased")
@@ -156,16 +162,19 @@ def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetS
 
             conflicts.append(CellConflict(column, existing_value, incoming_value, "incoming_value_changed"))
 
-        if updated_columns and conflicts:
-            action = "updated_with_conflicts"
-        elif updated_columns:
+        if conflicts:
+            decisions.append(RowDecision(schema.name, key, "anomaly", conflicts=conflicts))
+            continue
+
+        for column, value in updates.items():
+            result_df.at[row_index, column] = value
+
+        if updates:
             action = "updated"
-        elif conflicts:
-            action = "conflict"
         else:
             action = "noop"
 
-        decisions.append(RowDecision(schema.name, key, action, updated_columns, conflicts))
+        decisions.append(RowDecision(schema.name, key, action, list(updates), conflicts))
 
     return UpsertResult(sort_rows(result_df, schema), decisions)
 
