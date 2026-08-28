@@ -54,7 +54,7 @@ def test_existing_row_updates_when_incoming_numbers_increase():
     assert result.decisions[0].updated_columns == ["Total", "NCMC"]
 
 
-def test_lower_incoming_values_are_conflicts_and_do_not_overwrite():
+def test_lower_incoming_values_are_anomalies_and_do_not_overwrite():
     existing = pd.DataFrame(
         [
             {"Date": "2026-04-30", "Total": 180, "NCMC": 80},
@@ -71,7 +71,7 @@ def test_lower_incoming_values_are_conflicts_and_do_not_overwrite():
     row = result.dataframe.iloc[0]
     assert row["Total"] == 180
     assert row["NCMC"] == 80
-    assert result.decisions[0].action == "conflict"
+    assert result.decisions[0].action == "anomaly"
     assert [conflict.column for conflict in result.decisions[0].conflicts] == ["Total", "NCMC"]
 
 
