@@ -14,6 +14,8 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - name: Checkout repository
@@ -30,4 +32,4 @@ jobs:
           pip install pandas pytest
 
       - name: Run tests
-        run: pytest
+        run: python -m pytest tests
