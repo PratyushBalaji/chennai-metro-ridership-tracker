@@ -30,7 +30,7 @@ def test_equal_static_replay_is_noop():
     assert decision.conflicts == []
 
 
-def test_equal_or_larger_live_values_update_only_the_larger_cells():
+def test_equal_or_larger_live_values_update_the_row():
     existing = _frame(
         {"Date": "2026-04-30", "Total": 100, "NCMC": 40, "Paper QR": 25},
     )
@@ -50,7 +50,7 @@ def test_equal_or_larger_live_values_update_only_the_larger_cells():
     assert decision.conflicts == []
 
 
-def test_equal_or_smaller_incoming_values_are_preserved_as_conflicts():
+def test_equal_or_smaller_incoming_values_are_anomalous():
     existing = _frame(
         {"Date": "2026-04-30", "Total": 150, "NCMC": 40, "Paper QR": 30},
     )
@@ -65,13 +65,13 @@ def test_equal_or_smaller_incoming_values_are_preserved_as_conflicts():
     assert row["Total"] == 150
     assert row["NCMC"] == 40
     assert row["Paper QR"] == 30
-    assert decision.action == "conflict"
+    assert decision.action == "anomaly"
     assert decision.updated_columns == []
     assert [conflict.column for conflict in decision.conflicts] == ["Total", "Paper QR"]
     assert {conflict.reason for conflict in decision.conflicts} == {"incoming_value_decreased"}
 
 
-def test_mixed_row_updates_increases_and_preserves_decreases():
+def test_mixed_row_is_anomalous_and_does_not_partially_update():
     existing = _frame(
         {"Date": "2026-04-30", "Total": 100, "NCMC": 50, "Paper QR": 25},
     )
@@ -83,15 +83,16 @@ def test_mixed_row_updates_increases_and_preserves_decreases():
     decision = _only_decision(result)
     row = result.dataframe.iloc[0]
 
-    assert row["Total"] == 125
+    assert row["Total"] == 100
     assert row["NCMC"] == 50
     assert row["Paper QR"] == 25
-    assert decision.action == "updated_with_conflicts"
-    assert decision.updated_columns == ["Total"]
+    assert decision.action == "anomaly"
+    assert decision.updated_columns == []
     assert [(conflict.column, conflict.existing, conflict.incoming, conflict.reason) for conflict in decision.conflicts] == [
         ("NCMC", 50, 40, "incoming_value_decreased"),
     ]
-    assert result.updated == 1
+    assert result.updated == 0
+    assert result.anomalies == 1
     assert result.conflicts == 1
 
 
