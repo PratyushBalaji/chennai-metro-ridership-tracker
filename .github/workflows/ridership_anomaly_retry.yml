@@ -57,8 +57,10 @@ jobs:
         id: ridership
         continue-on-error: true
         run: |
+          set +e
           python ridership.py --day 0 --strict --anomaly-log Discrepancies/anomaly_log.jsonl
           code=$?
+          set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
