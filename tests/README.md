@@ -59,3 +59,24 @@ GitHub Actions first runs each root collector with `--api-response` and
 CSVs, JUnit results and coverage report are uploaded. The original functionality has 19 benchmark tests,
 plus 13 tests for the file-input CLI. This is a
 regression benchmark, not a guarantee about future CMRL availability.
+
+## strict upsert tests
+
+```sh
+python -m pytest -m idempotence
+```
+
+`test_ridership_idempotence.py` runs the current root script through its CLI
+using synthetic JSON in `fixtures/idempotence/cases.json` and prefilled CSVs.
+The cases check equal rows, increases, decreases, mixed values, missing values,
+blank backfills, historical inserts, live growth, final replays and next-day
+inserts. They also check exit code 2, both anomaly statuses, UTC/IST timestamps,
+append-only logs and row-level rejection while other keys update normally.
+
+`test_upsert_control_flow.py` additionally checks all 27 lower/equal/higher
+combinations across three numeric columns. Any decrease rejects the whole row;
+otherwise increases update it and an identical row is a noop.
+
+These tests exercise ridership's strict behavior. Parking and PHPDT retain
+their original benchmark tests until their collection logic uses strict upsert.
+CI automatically includes the new tests in its full pytest run.

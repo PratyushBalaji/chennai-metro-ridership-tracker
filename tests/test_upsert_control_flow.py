@@ -1,7 +1,37 @@
+from itertools import product
+
 import pandas as pd
+import pytest
 
 from collector.schemas import RIDERSHIP_DAILY
 from collector.upsert import upsert_rows
+
+
+@pytest.mark.idempotence
+@pytest.mark.parametrize("deltas", list(product((-5, 0, 5), repeat=3)),
+                         ids=lambda values: "_".join({-5: "lower", 0: "equal", 5: "higher"}[v] for v in values))
+def test_all_lower_equal_higher_combinations(deltas):
+    columns = ("Total", "NCMC", "Paper QR")
+    original = {"Date": "2026-06-15", "Total": 150, "NCMC": 100, "Paper QR": 50}
+    incoming = {**original, **{column: original[column] + delta for column, delta in zip(columns, deltas)}}
+    result = upsert_rows(pd.DataFrame([original]), pd.DataFrame([incoming]), RIDERSHIP_DAILY)
+    decision = result.decisions[0]
+    lower_columns = [column for column, delta in zip(columns, deltas) if delta < 0]
+    higher_columns = [column for column, delta in zip(columns, deltas) if delta > 0]
+
+    if lower_columns:
+        assert result.dataframe.to_dict(orient="records") == [original]
+        assert decision.action == "anomaly"
+        assert decision.updated_columns == []
+        assert [conflict.column for conflict in decision.conflicts] == lower_columns
+        assert {conflict.reason for conflict in decision.conflicts} == {"incoming_value_decreased"}
+        assert result.anomalies == 1
+    else:
+        assert result.dataframe.to_dict(orient="records") == [incoming]
+        assert decision.action == ("updated" if higher_columns else "noop")
+        assert decision.updated_columns == higher_columns
+        assert result.anomalies == 0
+        assert result.conflicts == 0
 
 
 def _frame(*rows):

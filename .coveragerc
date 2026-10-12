@@ -9,3 +9,4 @@ include =
     ridership.py
     parking.py
     phpdt.py
+    collector/*

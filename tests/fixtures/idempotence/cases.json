@@ -1,0 +1,107 @@
+{
+  "description": "Synthetic ridership responses for strict upsert tests; not historical data",
+  "cases": {
+    "equal": {
+      "daily": {"totalTickets": 150, "noOfNCMCcard": 100, "noOfPaperQR": 50},
+      "hourly": {"categories": ["2026-06-15T10:00:00"], "series": [
+        {"name": "Total", "data": [150]},
+        {"name": "Paper QR", "data": [50]},
+        {"name": "Singara Chennai Card", "data": [100]}
+      ]},
+      "station": [{"line": "01", "categories": ["CENTRAL  METRO"], "series": [
+        {"name": "Total", "data": [150]},
+        {"name": "Paper QR", "data": [50]},
+        {"name": "Singara Chennai Card", "data": [100]}
+      ]}]
+    },
+    "all_higher": {
+      "daily": {"totalTickets": 180, "noOfNCMCcard": 120, "noOfPaperQR": 60},
+      "hourly": {"categories": ["2026-06-15T10:00:00"], "series": [
+        {"name": "Total", "data": [180]},
+        {"name": "Paper QR", "data": [60]},
+        {"name": "Singara Chennai Card", "data": [120]}
+      ]},
+      "station": [{"line": "01", "categories": ["CENTRAL  METRO"], "series": [
+        {"name": "Total", "data": [180]},
+        {"name": "Paper QR", "data": [60]},
+        {"name": "Singara Chennai Card", "data": [120]}
+      ]}]
+    },
+    "higher_and_equal": {
+      "daily": {"totalTickets": 180, "noOfNCMCcard": 100, "noOfPaperQR": 50},
+      "hourly": {"categories": ["2026-06-15T10:00:00"], "series": [
+        {"name": "Total", "data": [180]},
+        {"name": "Paper QR", "data": [50]},
+        {"name": "Singara Chennai Card", "data": [100]}
+      ]},
+      "station": [{"line": "01", "categories": ["CENTRAL  METRO"], "series": [
+        {"name": "Total", "data": [180]},
+        {"name": "Paper QR", "data": [50]},
+        {"name": "Singara Chennai Card", "data": [100]}
+      ]}]
+    },
+    "all_lower": {
+      "daily": {"totalTickets": 120, "noOfNCMCcard": 80, "noOfPaperQR": 40},
+      "hourly": {"categories": ["2026-06-15T10:00:00"], "series": [
+        {"name": "Total", "data": [120]},
+        {"name": "Paper QR", "data": [40]},
+        {"name": "Singara Chennai Card", "data": [80]}
+      ]},
+      "station": [{"line": "01", "categories": ["CENTRAL  METRO"], "series": [
+        {"name": "Total", "data": [120]},
+        {"name": "Paper QR", "data": [40]},
+        {"name": "Singara Chennai Card", "data": [80]}
+      ]}]
+    },
+    "lower_and_equal": {
+      "daily": {"totalTickets": 120, "noOfNCMCcard": 100, "noOfPaperQR": 50},
+      "hourly": {"categories": ["2026-06-15T10:00:00"], "series": [
+        {"name": "Total", "data": [120]},
+        {"name": "Paper QR", "data": [50]},
+        {"name": "Singara Chennai Card", "data": [100]}
+      ]},
+      "station": [{"line": "01", "categories": ["CENTRAL  METRO"], "series": [
+        {"name": "Total", "data": [120]},
+        {"name": "Paper QR", "data": [50]},
+        {"name": "Singara Chennai Card", "data": [100]}
+      ]}]
+    },
+    "mixed": {
+      "daily": {"totalTickets": 180, "noOfNCMCcard": 80, "noOfPaperQR": 50},
+      "hourly": {"categories": ["2026-06-15T10:00:00"], "series": [
+        {"name": "Total", "data": [180]},
+        {"name": "Paper QR", "data": [50]},
+        {"name": "Singara Chennai Card", "data": [80]}
+      ]},
+      "station": [{"line": "01", "categories": ["CENTRAL  METRO"], "series": [
+        {"name": "Total", "data": [180]},
+        {"name": "Paper QR", "data": [50]},
+        {"name": "Singara Chennai Card", "data": [80]}
+      ]}]
+    },
+    "missing_card": {
+      "daily": {"totalTickets": 180, "noOfPaperQR": 60},
+      "hourly": {"categories": ["2026-06-15T10:00:00"], "series": [
+        {"name": "Total", "data": [180]},
+        {"name": "Paper QR", "data": [60]}
+      ]},
+      "station": [{"line": "01", "categories": ["CENTRAL  METRO"], "series": [
+        {"name": "Total", "data": [180]},
+        {"name": "Paper QR", "data": [60]}
+      ]}]
+    },
+    "next_day": {
+      "daily": {"totalTickets": 30, "noOfNCMCcard": 20, "noOfPaperQR": 10},
+      "hourly": {"categories": ["2026-06-16T10:00:00"], "series": [
+        {"name": "Total", "data": [30]},
+        {"name": "Paper QR", "data": [10]},
+        {"name": "Singara Chennai Card", "data": [20]}
+      ]},
+      "station": [{"line": "01", "categories": ["CENTRAL  METRO"], "series": [
+        {"name": "Total", "data": [30]},
+        {"name": "Paper QR", "data": [10]},
+        {"name": "Singara Chennai Card", "data": [20]}
+      ]}]
+    }
+  }
+}
