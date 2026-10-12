@@ -1,1 +1,6 @@
 __pycache__*
+.pytest_cache/
+.test-tmp*/
+.coverage
+coverage.xml
+test-results.xml
