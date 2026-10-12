@@ -1,4 +1,8 @@
-from collector.anomalies import append_jsonl, read_last_line, read_last_record
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from collector.anomalies import append_jsonl, read_last_line, read_last_record, retry_decision
 
 
 def test_anomaly_log_reads_last_non_empty_line(tmp_path):
@@ -16,3 +20,16 @@ def test_anomaly_log_reads_last_non_empty_line(tmp_path):
 def test_missing_anomaly_log_has_no_last_line(tmp_path):
     assert read_last_line(tmp_path / "missing.jsonl") is None
     assert read_last_record(tmp_path / "missing.jsonl") is None
+
+
+@pytest.mark.parametrize("status", ("resolved", "expired", "needs_review"))
+def test_retry_ignores_terminal_records(status):
+    assert retry_decision({"status": status}) == "skip"
+
+
+@pytest.mark.parametrize("age,expected", ((0, "wait"), (14, "wait"), (15, "due"), (16, "due")))
+def test_retry_waits_fifteen_minutes(age, expected):
+    now = datetime(2026, 6, 15, 12, tzinfo=timezone.utc)
+    record = {"status": "pending_retry", "source": "ridership", "day": "0", "date": "2026-06-15",
+              "utc_timestamp": (now - timedelta(minutes=age)).isoformat()}
+    assert retry_decision(record, now) == expected

@@ -80,3 +80,10 @@ otherwise increases update it and an identical row is a noop.
 These tests exercise ridership's strict behavior. Parking and PHPDT retain
 their original benchmark tests until their collection logic uses strict upsert.
 CI automatically includes the new tests in its full pytest run.
+
+## retries
+
+`python ridership.py --retry` owns the retry flow. It checks the last log
+record, waits 15 minutes when needed, collects live data when due, and appends
+`resolved` or `expired`. Both workflows commit accepted CSV updates alongside
+the anomaly log before rebasing, then report the collector's exit code.

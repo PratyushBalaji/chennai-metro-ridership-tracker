@@ -1,8 +1,14 @@
+import copy
+import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
+import yaml
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -146,3 +152,72 @@ def test_parking_cli_file_input_with_workflow_date(tmp_path, http_mock, run_coll
     for filename in FILES["parking"]:
         assert_frame_equal(canonical(read_csv(output_dir / filename)),
                            canonical(read_csv(FIXTURES / "expected" / filename)))
+
+
+@pytest.mark.parametrize("workflow", ("daily_data_update.yml", "ridership_anomaly_retry.yml"))
+def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tmp_path, run_collector):
+    git = shutil.which("git")
+    bash = str(Path(git).parent.parent / "bin/bash.exe") if os.name == "nt" and git else shutil.which("bash")
+    if not git or not bash or not Path(bash).exists():
+        pytest.skip("git and bash are required for the workflow integration test")
+
+    def command(*args, cwd):
+        result = subprocess.run([git, *map(str, args)], cwd=cwd, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    origin, first, runner = (tmp_path / name for name in ("origin.git", "first", "runner"))
+    first.mkdir()
+    command("init", "--bare", "-b", "main", origin, cwd=tmp_path)
+    command("init", "-b", "main", cwd=first)
+    command("config", "user.name", "test", cwd=first)
+    command("config", "user.email", "test@example.com", cwd=first)
+    shutil.copytree(FIXTURES / "idempotence/seed/Ridership", first / "Ridership")
+    (first / "Parking").mkdir()
+    shutil.copyfile(FIXTURES / "expected/Parking/ChennaiMetro_Daily_Parking.csv",
+                    first / "Parking/ChennaiMetro_Daily_Parking.csv")
+    command("add", ".", cwd=first)
+    command("commit", "-m", "test: seed csvs", cwd=first)
+    command("remote", "add", "origin", origin, cwd=first)
+    command("push", "-u", "origin", "main", cwd=first)
+    command("clone", origin, runner, cwd=tmp_path)
+
+    cases = json.loads((FIXTURES / "idempotence/cases.json").read_text())["cases"]
+    payload = copy.deepcopy(cases["mixed"])
+    payload["hourly"]["categories"].append("2026-06-15T12:00:00")
+    for series in payload["hourly"]["series"]:
+        series["data"].append({"Total": 40, "Paper QR": 15, "Singara Chennai Card": 25}[series["name"]])
+    base = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
+    bundle = {"responses": {base + endpoint + "/0": payload[name] for endpoint, name in (
+        ("allTicketCount", "daily"), ("hourlybaseddata", "hourly"), ("stationData", "station"),
+    )}}
+    response_file = tmp_path / "mixed.json"
+    response_file.write_text(json.dumps(bundle), encoding="utf-8")
+    with pytest.raises(SystemExit) as error:
+        run_collector("ridership", "--day", "0", "--api-response", response_file, "--output-dir", runner)
+    assert error.value.code == 2
+
+    (first / "remote_change.txt").write_text("unrelated remote change\n")
+    command("add", "remote_change.txt", cwd=first)
+    command("commit", "-m", "test: remote change", cwd=first)
+    command("push", cwd=first)
+
+    root = Path(__file__).resolve().parents[1]
+    document = yaml.safe_load((root / ".github/workflows" / workflow).read_text())
+    steps = next(iter(document["jobs"].values()))["steps"]
+    commit_step = next(step for step in steps if step.get("name") == "Commit and push data")
+    env = {**os.environ, "BRANCH_NAME": "main"}
+    for _ in range(2):
+        result = subprocess.run([bash, "-e", "-c", commit_step["run"]], cwd=runner,
+                                env=env, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+        assert command("status", "--porcelain", cwd=runner) == ""
+    assert (runner / "remote_change.txt").read_text().strip() == "unrelated remote change"
+    log = command("--git-dir", origin, "show", "main:Discrepancies/anomaly_log.jsonl", cwd=tmp_path)
+    assert json.loads(log)["status"] == "pending_retry"
+    hourly = command("--git-dir", origin, "show", "main:Ridership/ChennaiMetro_Hourly_Ridership.csv", cwd=tmp_path)
+    assert "2026-06-15,12:00,40,15,25" in hourly
+    report_step = steps[-1]
+    reported = subprocess.run([bash, "-e", "-c", report_step["run"]], cwd=runner,
+                              env={**env, "EXIT_CODE": "2"}, capture_output=True, text=True, timeout=30)
+    assert reported.returncode == 2

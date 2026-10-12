@@ -1,9 +1,27 @@
 import json
+import os
+from pathlib import Path
+import subprocess
+import sys
 from unittest.mock import patch
 
 import pandas as pd
 
 import ridership
+
+
+def test_retry_cli_starts_without_pythonpath_or_pending_log(tmp_path):
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+    script = Path(__file__).resolve().parents[1] / "ridership.py"
+    result = subprocess.run(
+        [sys.executable, "-E", str(script), "--retry", "--output-dir", str(tmp_path),
+         "--api-response", str(tmp_path / "unused.json")],
+        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "retry: skip" in result.stdout
+    assert not list(tmp_path.rglob("*.csv"))
+    assert not list(tmp_path.rglob("*.jsonl"))
 
 
 def test_normalize_daily_uses_sorted_payment_columns():

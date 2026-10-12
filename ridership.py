@@ -8,7 +8,10 @@ from typing import Any
 import pandas as pd
 import requests
 
-from collector.anomalies import ANOMALY_EXIT_CODE, ANOMALY_LOG_PATH, append_anomaly_record, has_anomalies
+from collector.anomalies import (
+    ANOMALY_EXIT_CODE, ANOMALY_LOG_PATH, append_anomaly_record,
+    append_retry_status, has_anomalies, read_last_record, retry_decision,
+)
 from collector.schemas import RIDERSHIP_DAILY, RIDERSHIP_HOURLY, RIDERSHIP_STATION
 from collector.upsert import UpsertResult, upsert_csv
 
@@ -230,17 +233,46 @@ def _format_result(dataset_name: str, date: str, result: UpsertResult) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Collect Chennai Metro ridership data.")
-    parser.add_argument("--day", default="1", choices=("0", "1"), help="CMRL day selector: 0=today, 1=yesterday")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--day", default="1", choices=("0", "1"), help="CMRL day selector: 0=today, 1=yesterday")
+    mode.add_argument("--retry", action="store_true", help="Retry the latest pending live-data anomaly when due")
     parser.add_argument("--output-dir", default=".", help="Directory containing the Ridership output folder")
     parser.add_argument("--api-response", type=Path, help="Read a JSON response bundle instead of calling the API")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and normalize without writing CSV files")
-    parser.add_argument("--strict", action="store_true", help="Use strict upsert checks")
+    parser.add_argument("--strict", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--anomaly-log", default=ANOMALY_LOG_PATH, help="Append-only JSONL anomaly log path")
     return parser.parse_args()
 
 
+def retry_ridership(args: argparse.Namespace) -> int:
+    log_path = _resolve_output_path(args.output_dir, args.anomaly_log)
+    previous = read_last_record(log_path)
+    decision = retry_decision(previous)
+    print(f"retry: {decision}")
+    if decision in ("skip", "wait"):
+        return 0
+    if decision == "expired":
+        if not args.dry_run:
+            append_retry_status(log_path, previous, "expired", "retry_cutoff")
+        return ANOMALY_EXIT_CODE
+    results = collect_ridership(
+        day="0", output_dir=args.output_dir, dry_run=args.dry_run,
+        anomaly_log=args.anomaly_log, api_response=args.api_response,
+    )
+    if has_anomalies(results):
+        return ANOMALY_EXIT_CODE
+    if not args.dry_run:
+        append_retry_status(log_path, previous, "resolved", "retry_ok")
+    return 0
+
+
 def main() -> None:
     args = parse_args()
+    if args.retry:
+        code = retry_ridership(args)
+        if code:
+            raise SystemExit(code)
+        return
     results = collect_ridership(
         day=args.day,
         output_dir=args.output_dir,

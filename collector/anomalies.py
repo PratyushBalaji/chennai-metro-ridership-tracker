@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
@@ -14,6 +14,29 @@ from collector.upsert import UpsertResult
 ANOMALY_EXIT_CODE = 2
 ANOMALY_LOG_PATH = Path("Discrepancies/anomaly_log.jsonl")
 IST = ZoneInfo("Asia/Kolkata")
+RETRY_WAIT_MINUTES = 15
+RETRY_CUTOFF_IST = time(23, 50)
+
+
+def retry_decision(record: dict[str, Any] | None, now: datetime | None = None) -> str:
+    if not record or record.get("status") != "pending_retry":
+        return "skip"
+    if record.get("source") != "ridership" or str(record.get("day")) != "0":
+        return "skip"
+    now = now or datetime.now(timezone.utc)
+    started_at = datetime.fromisoformat(record["utc_timestamp"].replace("Z", "+00:00"))
+    if now.astimezone(IST).time().replace(tzinfo=None) >= RETRY_CUTOFF_IST:
+        return "expired"
+    if (now - started_at).total_seconds() >= RETRY_WAIT_MINUTES * 60:
+        return "due"
+    return "wait"
+
+
+def append_retry_status(path: str | Path, previous: dict[str, Any], status: str, reason: str) -> None:
+    append_jsonl(path, build_log_record(
+        source=previous["source"], day=previous["day"], dataset_date=previous["date"],
+        status=status, reason=reason, previous_record=previous,
+    ))
 
 
 def has_anomalies(results: Iterable[UpsertResult]) -> bool:
