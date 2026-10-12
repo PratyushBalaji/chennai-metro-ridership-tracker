@@ -1,7 +1,6 @@
-pandas
+-r requirements-collector.txt
 matplotlib
 plotly
-requests
 seaborn
 nbformat
 folium

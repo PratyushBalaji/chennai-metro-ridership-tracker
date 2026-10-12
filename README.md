@@ -30,7 +30,7 @@ Accordingly:
 
 ## General Information
 
-The [ridership.py](./ridership.py), [parking.py](./parking.py) and [phpdt.py](./phpdt.py) files perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
+The [ridership.py](./ridership.py), [parking.py](./parking.py) and [phpdt.py](./phpdt.py) files collect, process and update the CSVs. Install collector dependencies with `pip install -r requirements-collector.txt`; the full requirements file also includes notebook packages.
 
 The CSV files contain the actual historical [daily](./ChennaiMetro_Daily_Ridership.csv), [hourly](./ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./ChennaiMetro_Station_Ridership.csv) ridership, parking and PHPDT data. The collection was started on January 24th 2026.
 
