@@ -108,10 +108,10 @@ def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetS
         )
 
     result_df = existing.copy()
-    index_by_key = {
-        _key_tuple(row, schema): idx
-        for idx, row in result_df.iterrows()
-    }
+    index_by_key = dict(zip(
+        result_df[list(schema.key_columns)].itertuples(index=False, name=None),
+        result_df.index,
+    ))
 
     decisions: list[RowDecision] = []
 
@@ -120,8 +120,11 @@ def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetS
         key = _key_dict(incoming_row, schema)
 
         if key_tuple not in index_by_key:
-            result_df.loc[len(result_df)] = incoming_row
-            index_by_key[key_tuple] = result_df.index[-1]
+            row_index = len(result_df)
+            while row_index in result_df.index:
+                row_index += 1
+            result_df.loc[row_index] = incoming_row
+            index_by_key[key_tuple] = row_index
             decisions.append(RowDecision(schema.name, key, "inserted"))
             continue
 
@@ -198,7 +201,7 @@ def normalize_columns(dataframe: pd.DataFrame, schema: DatasetSchema) -> pd.Data
 
 
 def sort_rows(dataframe: pd.DataFrame, schema: DatasetSchema) -> pd.DataFrame:
-    sort_columns = [column for column in schema.effective_sort_columns if column in dataframe.columns]
+    sort_columns = [column for column in schema.key_columns if column in dataframe.columns]
     if not sort_columns:
         return dataframe.reset_index(drop=True)
     return dataframe.sort_values(sort_columns, kind="mergesort").reset_index(drop=True)

@@ -5,12 +5,7 @@ from dataclasses import dataclass, field
 class DatasetSchema:
     name: str
     key_columns: tuple[str, ...]
-    sort_columns: tuple[str, ...] = field(default_factory=tuple)
     column_aliases: dict[str, str] = field(default_factory=dict)
-
-    @property
-    def effective_sort_columns(self) -> tuple[str, ...]:
-        return self.sort_columns or self.key_columns
 
 
 RIDERSHIP_DAILY = DatasetSchema(

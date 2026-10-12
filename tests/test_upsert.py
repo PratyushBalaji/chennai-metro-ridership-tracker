@@ -1,7 +1,10 @@
 import pandas as pd
 import pytest
 
-from collector.schemas import PARKING_STATION, RIDERSHIP_DAILY, RIDERSHIP_HOURLY
+from collector.schemas import (
+    PARKING_DAILY, PARKING_HOURLY, PARKING_STATION, PHPDT_DAILY,
+    RIDERSHIP_DAILY, RIDERSHIP_HOURLY, RIDERSHIP_STATION,
+)
 from collector.upsert import upsert_rows
 
 
@@ -122,3 +125,21 @@ def test_column_aliases_are_normalized_before_upsert():
 
     assert "Eight Wheleer" not in result.dataframe.columns
     assert result.dataframe.iloc[0]["Eight Wheeler"] == 2
+
+@pytest.mark.parametrize("schema", [RIDERSHIP_DAILY, RIDERSHIP_HOURLY, RIDERSHIP_STATION,
+                                   PARKING_DAILY, PARKING_HOURLY, PARKING_STATION, PHPDT_DAILY])
+def test_key_lookup_matches_original_with_existing_row_labels(schema):
+    keys = {"Date": "2026-10-11", "Hour": "10:00", "Line": "01", "Station": "SWD",
+            "Direction": "UP", "Start Station": "SAP", "End Station": "SME",
+            "Start Hour": "10:00", "End Hour": "11:00"}
+    first = {key: keys[key] for key in schema.key_columns}
+    second = {**first, "Date": "2026-10-12"}
+    existing = pd.DataFrame([{**first, "Count": 10}, {**second, "Count": 20}], index=[1, 2])
+    old = {tuple(row[key] for key in schema.key_columns): index for index, row in existing.iterrows()}
+    new = dict(zip(existing[list(schema.key_columns)].itertuples(index=False, name=None), existing.index))
+    assert new == old
+    incoming = pd.DataFrame([{**first, "Count": 11}, {**first, "Date": "2026-10-13", "Count": 30}])
+    result = upsert_rows(existing, incoming, schema)
+    assert list(result.dataframe["Count"]) == [11, 20, 30]
+    if "Line" in schema.key_columns:
+        assert list(result.dataframe["Line"]) == ["01", "01", "01"]
