@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import argparse
-import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import requests
+
+from collector import fetch_json
 
 from collector.anomalies import (
     ANOMALY_EXIT_CODE, ANOMALY_LOG_PATH, append_anomaly_record,
@@ -23,7 +23,6 @@ HOURLY_FILENAME = "Ridership/ChennaiMetro_Hourly_Ridership.csv"
 STATION_FILENAME = "Ridership/ChennaiMetro_Station_Ridership.csv"
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
-REQUEST_TIMEOUT_SECONDS = 30
 
 
 class PayloadUnavailableError(ValueError):
@@ -83,20 +82,6 @@ def endpoint(path: str, day: str) -> str:
 
 def convert_station_code(station_name: str) -> str:
     return STATION_CODES.get(station_name, station_name)
-
-
-def fetch_json(url: str, api_response: str | Path | None = None) -> Any:
-    if api_response is not None:
-        with open(api_response, encoding="utf-8") as file:
-            bundle = json.load(file)
-        if not isinstance(bundle, dict) or not isinstance(bundle.get("responses"), dict):
-            raise ValueError("API response file must contain a 'responses' object keyed by URL")
-        if url not in bundle["responses"]:
-            raise ValueError(f"API response file has no response for {url}")
-        return bundle["responses"][url]
-    response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    return response.json()
 
 
 def fetch_ridership_payloads(day: str, api_response: str | Path | None = None) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:

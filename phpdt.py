@@ -1,152 +1,81 @@
 import argparse
-import json
-import requests
+from pathlib import Path
+
 import pandas as pd
-import os
 
-"""
-SETUP
-"""
+from collector import fetch_json
+from collector.upsert import read_csv
 
-parser = argparse.ArgumentParser(description="Collect Chennai Metro PHPDT data.")
-parser.add_argument("--api-response", help="Read a JSON response bundle instead of calling the API")
-parser.add_argument("--output-dir", default=".", help="Directory containing the PHPDT output folder")
-args = parser.parse_args()
 
-DAILY_FILENAME = os.path.join(args.output_dir, "PHPDT/ChennaiMetro_Daily_PHPDT.csv")
-
-BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
-
-PHPDT_URL = BASE_URL + "PHPDTreport/"
-
+DAILY_FILENAME = "PHPDT/ChennaiMetro_Daily_PHPDT.csv"
+PHPDT_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/PHPDTreport/"
 ROUTE_MAPPING = {
-    # Line 1 (Blue Line)
-    "saPtoSWDViewModel": {"line": "1", "direction": "UP", "from": "SAP", "to": "SWD"},
-    "swDtoSAPViewModel": {"line": "1", "direction": "DOWN", "from": "SWD", "to": "SAP"},
-    
-    # Line 2 (Green Line)
-    "smMtoSCCViewModel": {"line": "2", "direction": "UP", "from": "SMM", "to": "SCC"},
-    "scCtoSMMViewModel": {"line": "2", "direction": "DOWN", "from": "SCC", "to": "SMM"},
+    "saPtoSWDViewModel": {"line": "1", "direction": "UP"},
+    "swDtoSAPViewModel": {"line": "1", "direction": "DOWN"},
+    "smMtoSCCViewModel": {"line": "2", "direction": "UP"},
+    "scCtoSMMViewModel": {"line": "2", "direction": "DOWN"},
 }
 
+
 def extract_station_code(corridor):
-    """Extract station codes from route key like 'seG_SCC2' -> ('SEG', 'SCC')"""
-    corridor = "".join([i for i in corridor if i.isalpha() or i == '_']) # remove non-alpha chars
-    parts = corridor.split("_")
+    """Extract station codes from a route key like 'seG_SCC2'."""
+    parts = "".join(char for char in corridor if char.isalpha() or char == "_").split("_")
     if len(parts) == 2:
         return parts[0].upper(), parts[1].upper()
-    
     return None, None
 
-"""
-CSV VALIDATION
-"""
 
-last_phpdt_date = None
-
-if not os.path.exists(DAILY_FILENAME):
-    os.makedirs(os.path.dirname(DAILY_FILENAME), exist_ok=True)
-    pd.DataFrame().to_csv(DAILY_FILENAME, index=False)
-else:
-    try:
-        phpdt_df = pd.read_csv(DAILY_FILENAME)
-        if not phpdt_df.empty:
-            last_phpdt_date = phpdt_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
-
-"""
-DATA COLLECTION AND BASIC PROCESSING
-"""
-
-def fetch_json(url, api_response=None):
-    if api_response is not None:
-        with open(api_response, encoding="utf-8") as file:
-            bundle = json.load(file)
-        if not isinstance(bundle, dict) or not isinstance(bundle.get("responses"), dict):
-            raise ValueError("API response file must contain a 'responses' object keyed by URL")
-        if url not in bundle["responses"]:
-            raise ValueError(f"API response file has no response for {url}")
-        return bundle["responses"][url]
-    return requests.get(url).json()
+def normalize_phpdt(payload):
+    rows = []
+    for route_key, route in ROUTE_MAPPING.items():
+        if not payload.get(route_key):
+            print(f"Warning: No data available for route key '{route_key}'")
+            continue
+        for entry in payload[route_key]:
+            start = pd.to_datetime(entry["transfromdate"])
+            end = pd.to_datetime(entry["transtodate"])
+            for corridor, count in entry.items():
+                if "_" not in corridor:
+                    continue
+                start_station, end_station = extract_station_code(corridor)
+                if not start_station or not end_station:
+                    print(f"Error: Could not extract stations from corridor key '{corridor}'")
+                    continue
+                rows.append({
+                    "Date": start.strftime("%Y-%m-%d"),
+                    "Line": route["line"],
+                    "Direction": route["direction"],
+                    "Start Hour": start.strftime("%H:%M"),
+                    "End Hour": end.strftime("%H:%M"),
+                    "Start Station": start_station,
+                    "End Station": end_station,
+                    "PHPDT": count,
+                })
+    return pd.DataFrame(rows)
 
 
-def get_phpdt_data():
-    return fetch_json(PHPDT_URL, args.api_response)
+def collect_phpdt(output_dir=".", api_response=None):
+    dataframe = normalize_phpdt(fetch_json(PHPDT_URL, api_response))
+    if dataframe.empty:
+        print("No PHPDT data available to process.")
+        return []
+    target = Path(output_dir) / DAILY_FILENAME
+    existing = read_csv(target)
+    dataset_date = dataframe.iloc[0]["Date"]
+    if not existing.empty and existing.iloc[-1]["Date"] == dataset_date:
+        print(f"PHPDT data for {dataset_date} already exists. Skipping.")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    dataframe.to_csv(target, index=False, mode="w" if existing.empty else "a", header=existing.empty)
 
-phpdt_response = get_phpdt_data()
 
-"""
-DATA VALIDATION
-"""
+def main():
+    parser = argparse.ArgumentParser(description="Collect Chennai Metro PHPDT data.")
+    parser.add_argument("--api-response", type=Path, help="Read a JSON response bundle instead of calling the API")
+    parser.add_argument("--output-dir", default=".", help="Directory containing the PHPDT output folder")
+    args = parser.parse_args()
+    collect_phpdt(args.output_dir, args.api_response)
 
-# Skipped for now
 
-"""
-OUTPUT FORMATTING AND APPEND TO FILES
-"""
-
-# PHPDT CSV
-phpdt_rows = []
-
-for route_key, route_info in ROUTE_MAPPING.items():
-    if route_key not in phpdt_response:
-        print(f"Warning: Route key '{route_key}' not found in PHPDT response")
-        continue
-    
-    route_data = phpdt_response[route_key]
-    if not route_data:
-        print(f"Warning: No data available for route key '{route_key}'")
-        continue
-    
-    for entry in route_data:
-        from_datetime = pd.to_datetime(entry['transfromdate'])
-        to_datetime = pd.to_datetime(entry['transtodate'])
-        
-        date = from_datetime.strftime('%Y-%m-%d')
-        start_hour = from_datetime.strftime('%H:%M')
-        end_hour = to_datetime.strftime('%H:%M')
-        
-        line = route_info['line']
-        direction = route_info['direction']
-        
-        # Get all entries in the format : <station1>_<station2>
-        corridor_keys = [k for k in entry.keys() if '_' in k]
-        
-        for key in corridor_keys:            
-            corridor_value = entry[key]
-            
-            # Extract station codes from corridor key
-            from_station, to_station = extract_station_code(key)
-            
-            if from_station and to_station:
-                row = {
-                    'Date': date,
-                    'Line': line,
-                    'Direction': direction,
-                    'Start Hour': start_hour,
-                    'End Hour': end_hour,
-                    'Start Station': from_station,
-                    'End Station': to_station,
-                    'PHPDT': corridor_value
-                }
-                phpdt_rows.append(row)
-            else:
-                print(f"Error: Could not extract stations from corridor key '{key}'")
-
-if phpdt_rows:
-    DATE = phpdt_rows[0]['Date'] # current date
-    
-    if DATE != last_phpdt_date: # if not already at latest date
-        phpdt_df_new = pd.DataFrame(phpdt_rows)
-        
-        if last_phpdt_date is None: # no first entry / no file
-            phpdt_df_new.to_csv(DAILY_FILENAME, index=False, header=True)
-            print(f"Created {DAILY_FILENAME} with {len(phpdt_rows)} entries for {DATE}")
-        else:  # else append
-            phpdt_df_new.to_csv(DAILY_FILENAME, index=False, mode='a', header=False)
-            print(f"Appended {len(phpdt_rows)} PHPDT entries for {DATE}")
-    else:
-        print(f"PHPDT data for {DATE} already exists. Skipping.")
-else:
-    print("No PHPDT data available to process.")
+if __name__ == "__main__":
+    main()

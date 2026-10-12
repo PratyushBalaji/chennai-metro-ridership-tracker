@@ -1,32 +1,19 @@
 import argparse
-import json
-import requests
-import pandas as pd
 import os
+from pathlib import Path
 
-"""
-SETUP
-"""
+import pandas as pd
 
-parser = argparse.ArgumentParser(description="Collect Chennai Metro parking data.")
-parser.add_argument("--api-response", help="Read a JSON response bundle instead of calling the API")
-parser.add_argument("--output-dir", default=".", help="Directory containing the Parking output folder")
-args = parser.parse_args()
+from collector import fetch_json
+from collector.schemas import PARKING_DAILY, PARKING_HOURLY, PARKING_STATION
+from collector.upsert import read_csv
 
-DAILY_FILENAME = os.path.join(args.output_dir, "Parking/ChennaiMetro_Daily_Parking.csv")
-HOURLY_FILENAME = os.path.join(args.output_dir, "Parking/ChennaiMetro_Hourly_Parking.csv")
-STATION_FILENAME = os.path.join(args.output_dir, "Parking/ChennaiMetro_Station_Parking.csv")
-os.makedirs(os.path.dirname(DAILY_FILENAME), exist_ok=True)
 
+DAILY_FILENAME = "Parking/ChennaiMetro_Daily_Parking.csv"
+HOURLY_FILENAME = "Parking/ChennaiMetro_Hourly_Parking.csv"
+STATION_FILENAME = "Parking/ChennaiMetro_Station_Parking.csv"
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/parkingdashboard/"
-DAY = "1"
-
-DAILY_PARKING_URL = BASE_URL + "allTicketCount/" + DAY
-HOURLY_PARKING_URL = BASE_URL + "hourlybaseddata/" + DAY
-STATION_PARKING_URL = BASE_URL + "stationData/" + DAY
-
-RIDERSHIP_BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
-RIDERSHIP_HOURLY_URL = RIDERSHIP_BASE_URL + "hourlybaseddata/" + DAY
+RIDERSHIP_HOURLY_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/hourlybaseddata/1"
 
 PARKING_STATION_CODES = {
     # Blue Line
@@ -74,189 +61,78 @@ PARKING_STATION_CODES = {
     "St. Thomas Mount": "SMM",
 }
 
+
 def convert_parking_station_code(station_name):
     return PARKING_STATION_CODES.get(station_name, station_name)
 
-"""
-CSV VALIDATION
-"""
 
-last_daily_date = None
-last_hourly_date = None
-last_station_date = None
-
-if not os.path.exists(DAILY_FILENAME):
-    pd.DataFrame().to_csv(DAILY_FILENAME, index=False)
-else:
-    try:
-        daily_df = pd.read_csv(DAILY_FILENAME)
-        if not daily_df.empty:
-            last_daily_date = daily_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
-
-if not os.path.exists(HOURLY_FILENAME):
-    pd.DataFrame().to_csv(HOURLY_FILENAME, index=False)
-else:
-    try:
-        hourly_df = pd.read_csv(HOURLY_FILENAME)
-        if not hourly_df.empty:
-            last_hourly_date = hourly_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
-
-if not os.path.exists(STATION_FILENAME):
-    pd.DataFrame().to_csv(STATION_FILENAME, index=False)
-else:
-    try:
-        station_df = pd.read_csv(STATION_FILENAME)
-        if not station_df.empty:
-            last_station_date = station_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
-
-"""
-DATA COLLECTION AND BASIC PROCESSING
-"""
-
-def fetch_json(url, api_response=None):
-    if api_response is not None:
-        with open(api_response, encoding="utf-8") as file:
-            bundle = json.load(file)
-        if not isinstance(bundle, dict) or not isinstance(bundle.get("responses"), dict):
-            raise ValueError("API response file must contain a 'responses' object keyed by URL")
-        if url not in bundle["responses"]:
-            raise ValueError(f"API response file has no response for {url}")
-        return bundle["responses"][url]
-    return requests.get(url).json()
+def normalize_daily(payload, dataset_date):
+    vehicle_types = sorted(key for key in payload if key != "totalVehicles")
+    return pd.DataFrame([{
+        "Date": dataset_date,
+        "Total Vehicles": payload["totalVehicles"],
+        **{name: payload[name] for name in vehicle_types},
+    }])
 
 
-def get_daily_parking():
-    return fetch_json(DAILY_PARKING_URL, args.api_response)
+def normalize_hourly(payload, dataset_date):
+    series = {item["name"]: item["data"] for item in payload["series"]}
+    vehicle_types = sorted(name for name in series if name != "Total Vehicles")
+    return pd.DataFrame([{
+        "Date": dataset_date,
+        "Hour": time[:5],
+        "Total Vehicles": series["Total Vehicles"][index],
+        **{name: series[name][index] for name in vehicle_types},
+    } for index, time in enumerate(payload["categories"])])
 
-def get_hourly_parking():
-    response = fetch_json(HOURLY_PARKING_URL, args.api_response)
-    hourly_data = {
-        'times': [t[:5] for t in response['categories']],
-        'series': {s['name']: s['data'] for s in response['series']}
-    }
-    return hourly_data
 
-def get_station_parking():
-    response = fetch_json(STATION_PARKING_URL, args.api_response)
-    station_data = {}
-    for line_data in response:
-        line_number = line_data['line']
-        station_data[line_number] = {
-            'stations': list(map(convert_parking_station_code, line_data['categories'])),
-            'series': {s['name']: s['data'] for s in line_data['series']}
-        }
-    return station_data
+def normalize_station(payload, dataset_date):
+    rows = []
+    for line in payload:
+        series = {item["name"]: item["data"] for item in line["series"]}
+        vehicle_types = sorted(name for name in series if name != "Total Vehicles")
+        for index, station in enumerate(line["categories"]):
+            rows.append({
+                "Date": dataset_date,
+                "Line": line["line"],
+                "Station": convert_parking_station_code(station),
+                "Total Vehicles": series["Total Vehicles"][index],
+                **{name: series[name][index] for name in vehicle_types},
+            })
+    return pd.DataFrame(rows)
 
-daily_parking = get_daily_parking()
-hourly_parking = get_hourly_parking()
-station_parking = get_station_parking()
 
-# Prefer date provided via environment (to avoid extra API calls in CI)
-_env_date = os.getenv("DATASET_DATE")
-if _env_date:
-    DATE = _env_date
-else:
-    # Fallback : Extract date from ridership API
-    ridership_hourly_response = fetch_json(RIDERSHIP_HOURLY_URL, args.api_response)
-    DATE = pd.to_datetime(ridership_hourly_response['categories'][0]).strftime('%Y-%m-%d')
+def collect_parking(output_dir=".", api_response=None):
+    daily = fetch_json(BASE_URL + "allTicketCount/1", api_response)
+    hourly = fetch_json(BASE_URL + "hourlybaseddata/1", api_response)
+    station = fetch_json(BASE_URL + "stationData/1", api_response)
+    dataset_date = os.getenv("DATASET_DATE")
+    if not dataset_date:
+        ridership_hourly = fetch_json(RIDERSHIP_HOURLY_URL, api_response)
+        dataset_date = pd.to_datetime(ridership_hourly["categories"][0]).strftime("%Y-%m-%d")
 
-"""
-DATA VALIDATION
-"""
+    datasets = (
+        (DAILY_FILENAME, normalize_daily(daily, dataset_date), PARKING_DAILY),
+        (HOURLY_FILENAME, normalize_hourly(hourly, dataset_date), PARKING_HOURLY),
+        (STATION_FILENAME, normalize_station(station, dataset_date), PARKING_STATION),
+    )
+    for filename, dataframe, schema in datasets:
+        target = Path(output_dir) / filename
+        existing = read_csv(target)
+        if not existing.empty and existing.iloc[-1]["Date"] == dataset_date:
+            print(f"{schema.name}: data for {dataset_date} already exists. Skipping.")
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        dataframe.to_csv(target, index=False, mode="w" if existing.empty else "a", header=existing.empty)
 
-# Skipped for now
 
-"""
-OUTPUT FORMATTING AND APPEND TO FILES
-"""
+def main():
+    parser = argparse.ArgumentParser(description="Collect Chennai Metro parking data.")
+    parser.add_argument("--api-response", type=Path, help="Read a JSON response bundle instead of calling the API")
+    parser.add_argument("--output-dir", default=".", help="Directory containing the Parking output folder")
+    args = parser.parse_args()
+    collect_parking(args.output_dir, args.api_response)
 
-# ===== DAILY CSV =====
-if DATE != last_daily_date:
-    vehicle_types = sorted([key for key in daily_parking.keys() if key != 'totalVehicles'])
-    
-    daily_headers = ['Date', 'Total Vehicles'] + vehicle_types
-    
-    daily_row = {
-        'Date': DATE,
-        'Total Vehicles': daily_parking['totalVehicles']
-    }
-    for vtype in vehicle_types:
-        daily_row[vtype] = daily_parking[vtype]
-    
-    daily_df_new = pd.DataFrame([daily_row])
-    
-    if last_daily_date is None:
-        daily_df_new.to_csv(DAILY_FILENAME, index=False, header=True)
-        print(f"Created {DAILY_FILENAME} with data for {DATE}")
-    else:
-        daily_df_new.to_csv(DAILY_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended daily parking data for {DATE}")
-else:
-    print(f"Daily parking data for {DATE} already exists. Skipping.")
 
-# ===== HOURLY CSV =====
-if DATE != last_hourly_date:
-    hourly_vehicle_types = sorted([key for key in hourly_parking['series'].keys() if key != 'Total Vehicles'])
-    
-    hourly_headers = ['Date', 'Hour', 'Total Vehicles'] + hourly_vehicle_types
-    
-    hourly_rows = []
-    for i, time in enumerate(hourly_parking['times']):
-        row = {
-            'Date': DATE,
-            'Hour': time,
-            'Total Vehicles': hourly_parking['series']['Total Vehicles'][i]
-        }
-        for vtype in hourly_vehicle_types:
-            row[vtype] = hourly_parking['series'][vtype][i]
-        hourly_rows.append(row)
-    
-    hourly_df_new = pd.DataFrame(hourly_rows)
-    
-    if last_hourly_date is None:
-        hourly_df_new.to_csv(HOURLY_FILENAME, index=False, header=True)
-        print(f"Created {HOURLY_FILENAME} with {len(hourly_rows)} entries for {DATE}")
-    else:
-        hourly_df_new.to_csv(HOURLY_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended {len(hourly_rows)} hourly parking entries for {DATE}")
-else:
-    print(f"Hourly parking data for {DATE} already exists. Skipping.")
-
-# ===== STATIONWISE CSV =====
-if DATE != last_station_date:
-    first_line_key = list(station_parking.keys())[0]
-    station_vehicle_types = sorted([key for key in station_parking[first_line_key]['series'].keys() if key != 'Total Vehicles'])
-    
-    station_headers = ['Date', 'Line', 'Station', 'Total Vehicles'] + station_vehicle_types
-    
-    station_rows = []
-    for line_number, line_data in station_parking.items():
-        stations = line_data['stations']
-        line_vehicle_types = sorted([key for key in line_data['series'].keys() if key != 'Total Vehicles'])
-        for i, station_code in enumerate(stations):
-            row = {
-                'Date': DATE,
-                'Line': line_number,
-                'Station': station_code,
-                'Total Vehicles': line_data['series']['Total Vehicles'][i]
-            }
-            for vtype in line_vehicle_types:
-                row[vtype] = line_data['series'][vtype][i]
-            station_rows.append(row)
-    
-    station_df_new = pd.DataFrame(station_rows)
-    
-    if last_station_date is None:
-        station_df_new.to_csv(STATION_FILENAME, index=False, header=True)
-        print(f"Created {STATION_FILENAME} with {len(station_rows)} entries for {DATE}")
-    else:
-        station_df_new.to_csv(STATION_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended {len(station_rows)} station parking entries for {DATE}")
-else:
-    print(f"Station parking data for {DATE} already exists. Skipping.")
+if __name__ == "__main__":
+    main()

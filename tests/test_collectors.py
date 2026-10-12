@@ -1,14 +1,20 @@
 import copy
+import importlib
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+from unittest.mock import Mock
 
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
+import requests
 import yaml
+
+from collector import fetch_json
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -221,3 +227,72 @@ def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tm
     reported = subprocess.run([bash, "-e", "-c", report_step["run"]], cwd=runner,
                               env={**env, "EXIT_CODE": "2"}, capture_output=True, text=True, timeout=30)
     assert reported.returncode == 2
+
+@pytest.mark.parametrize("script", ["parking", "phpdt"])
+def test_imports_do_not_collect_parse_args_or_write(script, monkeypatch, tmp_path):
+    import argparse
+
+    monkeypatch.chdir(tmp_path)
+    forbidden = Mock(side_effect=AssertionError("import must be side-effect free"))
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", forbidden)
+    monkeypatch.setattr(requests, "get", forbidden)
+    monkeypatch.setattr(os, "makedirs", forbidden)
+    monkeypatch.setattr(Path, "mkdir", forbidden)
+    monkeypatch.setattr(pd.DataFrame, "to_csv", forbidden)
+    monkeypatch.delitem(sys.modules, script, raising=False)
+    importlib.import_module(script)
+    forbidden.assert_not_called()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_shared_fetch_checks_status_and_timeout(monkeypatch):
+    response = Mock()
+    response.json.return_value = {"data": 1}
+    get = Mock(return_value=response)
+    monkeypatch.setattr(requests, "get", get)
+    assert fetch_json("https://example.test/data") == {"data": 1}
+    get.assert_called_once_with("https://example.test/data", timeout=30)
+    response.raise_for_status.assert_called_once_with()
+
+
+@pytest.mark.parametrize("error", [requests.Timeout("slow"), requests.HTTPError("503")])
+def test_shared_fetch_propagates_http_failures(error, monkeypatch):
+    response = Mock()
+    if isinstance(error, requests.Timeout):
+        get = Mock(side_effect=error)
+    else:
+        response.raise_for_status.side_effect = error
+        get = Mock(return_value=response)
+    monkeypatch.setattr(requests, "get", get)
+    with pytest.raises(type(error)):
+        fetch_json("https://example.test/data")
+    get.assert_called_once_with("https://example.test/data", timeout=30)
+    response.json.assert_not_called()
+
+
+@pytest.mark.parametrize("bundle,message", [
+    ([], "responses.*object"), ({}, "responses.*object"),
+    ({"responses": []}, "responses.*object"), ({"responses": {}}, "no response"),
+])
+def test_shared_fetch_validates_fixture_bundles(bundle, message, tmp_path, monkeypatch):
+    path = tmp_path / "response.json"
+    path.write_text(json.dumps(bundle), encoding="utf-8")
+    forbidden = Mock(side_effect=AssertionError("fixture mode must not use HTTP"))
+    monkeypatch.setattr(requests, "get", forbidden)
+    with pytest.raises(ValueError, match=message):
+        fetch_json("https://example.test/data", path)
+    forbidden.assert_not_called()
+
+
+@pytest.mark.parametrize("script", FILES)
+def test_root_cli_without_pythonpath(script, tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    env = {key: value for key, value in os.environ.items() if not key.startswith("PYTHON") and key != "DATASET_DATE"}
+    output = tmp_path / "output"
+    result = subprocess.run([sys.executable, "-E", str(root / (script + ".py")),
+                             "--api-response", str(FIXTURES / "api/day1.json"),
+                             "--output-dir", str(output)], cwd=tmp_path, env=env,
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    for filename in FILES[script]:
+        assert_frame_equal(canonical(read_csv(output / filename)), canonical(read_csv(FIXTURES / "expected" / filename)))
