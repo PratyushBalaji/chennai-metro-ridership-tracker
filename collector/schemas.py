@@ -47,8 +47,6 @@ PHPDT_DAILY = DatasetSchema(
         "Date",
         "Line",
         "Direction",
-        "Start Hour",
-        "End Hour",
         "Start Station",
         "End Station",
     ),

@@ -4,7 +4,9 @@ from pathlib import Path
 import pandas as pd
 
 from collector import fetch_json
-from collector.upsert import read_csv
+from collector.anomalies import ANOMALY_EXIT_CODE, ANOMALY_LOG_PATH, append_anomaly_record, has_anomalies
+from collector.schemas import PHPDT_DAILY
+from collector.upsert import upsert_csv
 
 
 DAILY_FILENAME = "PHPDT/ChennaiMetro_Daily_PHPDT.csv"
@@ -54,27 +56,30 @@ def normalize_phpdt(payload):
     return pd.DataFrame(rows)
 
 
-def collect_phpdt(output_dir=".", api_response=None):
+def collect_phpdt(output_dir=".", api_response=None, anomaly_log=ANOMALY_LOG_PATH):
     dataframe = normalize_phpdt(fetch_json(PHPDT_URL, api_response))
     if dataframe.empty:
         print("No PHPDT data available to process.")
         return []
-    target = Path(output_dir) / DAILY_FILENAME
-    existing = read_csv(target)
-    dataset_date = dataframe.iloc[0]["Date"]
-    if not existing.empty and existing.iloc[-1]["Date"] == dataset_date:
-        print(f"PHPDT data for {dataset_date} already exists. Skipping.")
-        return
-    target.parent.mkdir(parents=True, exist_ok=True)
-    dataframe.to_csv(target, index=False, mode="w" if existing.empty else "a", header=existing.empty)
+    result = upsert_csv(Path(output_dir) / DAILY_FILENAME, dataframe, PHPDT_DAILY, allow_increases=False)
+    print(f"phpdt_daily: inserted={result.inserted}, updated={result.updated}, anomalies={result.anomalies}")
+    results = [result]
+    append_anomaly_record(
+        Path(output_dir) / anomaly_log, source="phpdt", day="1",
+        dataset_date=dataframe.iloc[0]["Date"], results=results,
+    )
+    return results
 
 
 def main():
     parser = argparse.ArgumentParser(description="Collect Chennai Metro PHPDT data.")
     parser.add_argument("--api-response", type=Path, help="Read a JSON response bundle instead of calling the API")
     parser.add_argument("--output-dir", default=".", help="Directory containing the PHPDT output folder")
+    parser.add_argument("--anomaly-log", type=Path, default=ANOMALY_LOG_PATH)
     args = parser.parse_args()
-    collect_phpdt(args.output_dir, args.api_response)
+    results = collect_phpdt(args.output_dir, args.api_response, args.anomaly_log)
+    if has_anomalies(results):
+        raise SystemExit(ANOMALY_EXIT_CODE)
 
 
 if __name__ == "__main__":

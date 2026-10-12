@@ -32,6 +32,10 @@ Accordingly:
 
 The [ridership.py](./ridership.py), [parking.py](./parking.py) and [phpdt.py](./phpdt.py) files collect, process and update the CSVs. Install collector dependencies with `pip install -r requirements-collector.txt`; the full requirements file also includes notebook packages.
 
+Ridership and parking accept increases and blank backfills. PHPDT only accepts new records and blank backfills; changed counts or peak hours need review. Anomalous rows stay unchanged, are logged in `Discrepancies/anomaly_log.jsonl`, and cause exit code `2`. Accepted rows are still saved.
+
+Parking station CSVs now use `Eight Wheeler` only. The old `Eight Wheleer` column is folded into it on collection; conflicting populated values stop collection before any parking CSV writes.
+
 The CSV files contain the actual historical [daily](./ChennaiMetro_Daily_Ridership.csv), [hourly](./ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./ChennaiMetro_Station_Ridership.csv) ridership, parking and PHPDT data. The collection was started on January 24th 2026.
 
 The project directory also contains [a Jupyter Notebook](./ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use the [requirements file](requirements.txt) to install any Python modules required in the notebook through pip.

@@ -74,14 +74,14 @@ def write_csv_atomic(path: str | Path, dataframe: pd.DataFrame) -> None:
     temp_path.replace(csv_path)
 
 
-def upsert_csv(path: str | Path, incoming: pd.DataFrame, schema: DatasetSchema) -> UpsertResult:
+def upsert_csv(path: str | Path, incoming: pd.DataFrame, schema: DatasetSchema, *, allow_increases: bool = True) -> UpsertResult:
     existing = read_csv(path)
-    result = upsert_rows(existing, incoming, schema)
+    result = upsert_rows(existing, incoming, schema, allow_increases=allow_increases)
     write_csv_atomic(path, result.dataframe)
     return result
 
 
-def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetSchema) -> UpsertResult:
+def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetSchema, *, allow_increases: bool = True) -> UpsertResult:
     existing = normalize_columns(existing.copy(), schema)
     incoming = normalize_columns(incoming.copy(), schema)
 
@@ -156,7 +156,12 @@ def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetS
 
             if existing_number is not None and incoming_number is not None:
                 if incoming_number > existing_number:
-                    updates[column] = incoming_value
+                    if allow_increases:
+                        updates[column] = incoming_value
+                    else:
+                        conflicts.append(
+                            CellConflict(column, existing_value, incoming_value, "incoming_value_changed")
+                        )
                 elif incoming_number < existing_number:
                     conflicts.append(
                         CellConflict(column, existing_value, incoming_value, "incoming_value_decreased")
@@ -191,6 +196,12 @@ def normalize_columns(dataframe: pd.DataFrame, schema: DatasetSchema) -> pd.Data
             dataframe = dataframe.rename(columns={alias: canonical})
             continue
 
+        for row_label, legacy, current in zip(dataframe.index, dataframe[alias], dataframe[canonical]):
+            if not _is_empty(legacy) and not _is_empty(current) and not _values_equal(legacy, current):
+                raise ValueError(
+                    f"{schema.name}: conflicting values for {alias!r} and {canonical!r} "
+                    f"at row {row_label}: {legacy!r} vs {current!r}"
+                )
         dataframe[canonical] = dataframe[canonical].where(
             ~dataframe[canonical].map(_is_empty),
             dataframe[alias],

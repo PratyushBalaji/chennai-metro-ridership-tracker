@@ -5,8 +5,9 @@ from pathlib import Path
 import pandas as pd
 
 from collector import fetch_json
+from collector.anomalies import ANOMALY_EXIT_CODE, ANOMALY_LOG_PATH, append_anomaly_record, has_anomalies
 from collector.schemas import PARKING_DAILY, PARKING_HOURLY, PARKING_STATION
-from collector.upsert import read_csv
+from collector.upsert import read_csv, upsert_rows, write_csv_atomic
 
 
 DAILY_FILENAME = "Parking/ChennaiMetro_Daily_Parking.csv"
@@ -102,7 +103,7 @@ def normalize_station(payload, dataset_date):
     return pd.DataFrame(rows)
 
 
-def collect_parking(output_dir=".", api_response=None):
+def collect_parking(output_dir=".", api_response=None, anomaly_log=ANOMALY_LOG_PATH):
     daily = fetch_json(BASE_URL + "allTicketCount/1", api_response)
     hourly = fetch_json(BASE_URL + "hourlybaseddata/1", api_response)
     station = fetch_json(BASE_URL + "stationData/1", api_response)
@@ -116,22 +117,30 @@ def collect_parking(output_dir=".", api_response=None):
         (HOURLY_FILENAME, normalize_hourly(hourly, dataset_date), PARKING_HOURLY),
         (STATION_FILENAME, normalize_station(station, dataset_date), PARKING_STATION),
     )
-    for filename, dataframe, schema in datasets:
-        target = Path(output_dir) / filename
-        existing = read_csv(target)
-        if not existing.empty and existing.iloc[-1]["Date"] == dataset_date:
-            print(f"{schema.name}: data for {dataset_date} already exists. Skipping.")
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        dataframe.to_csv(target, index=False, mode="w" if existing.empty else "a", header=existing.empty)
+    # Validate every archive and payload before migrating or writing any CSV.
+    results = [
+        upsert_rows(read_csv(Path(output_dir) / filename), dataframe, schema)
+        for filename, dataframe, schema in datasets
+    ]
+    for (filename, _, schema), result in zip(datasets, results):
+        write_csv_atomic(Path(output_dir) / filename, result.dataframe)
+        print(f"{schema.name}: inserted={result.inserted}, updated={result.updated}, anomalies={result.anomalies}")
+    append_anomaly_record(
+        Path(output_dir) / anomaly_log, source="parking", day="1",
+        dataset_date=dataset_date, results=results,
+    )
+    return results
 
 
 def main():
     parser = argparse.ArgumentParser(description="Collect Chennai Metro parking data.")
     parser.add_argument("--api-response", type=Path, help="Read a JSON response bundle instead of calling the API")
     parser.add_argument("--output-dir", default=".", help="Directory containing the Parking output folder")
+    parser.add_argument("--anomaly-log", type=Path, default=ANOMALY_LOG_PATH)
     args = parser.parse_args()
-    collect_parking(args.output_dir, args.api_response)
+    results = collect_parking(args.output_dir, args.api_response, args.anomaly_log)
+    if has_anomalies(results):
+        raise SystemExit(ANOMALY_EXIT_CODE)
 
 
 if __name__ == "__main__":
