@@ -26,6 +26,16 @@ jobs:
           python ridership.py
           --api-response tests/fixtures/api/day1.json
           --output-dir "$RUNNER_TEMP/ridership-cli"
+      - name: Run parking with fixed API response
+        run: >-
+          python parking.py
+          --api-response tests/fixtures/api/day1.json
+          --output-dir "$RUNNER_TEMP/parking-cli"
+      - name: Run PHPDT with fixed API response
+        run: >-
+          python phpdt.py
+          --api-response tests/fixtures/api/day1.json
+          --output-dir "$RUNNER_TEMP/phpdt-cli"
       - name: Run collector benchmark
         run: >-
           python -m pytest --junitxml=test-results.xml
@@ -39,3 +49,5 @@ jobs:
             test-results.xml
             coverage.xml
             ${{ runner.temp }}/ridership-cli/Ridership/*.csv
+            ${{ runner.temp }}/parking-cli/Parking/*.csv
+            ${{ runner.temp }}/phpdt-cli/PHPDT/*.csv
