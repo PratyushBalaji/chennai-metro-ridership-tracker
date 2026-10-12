@@ -1,0 +1,3 @@
+Date,Line,Direction,Start Hour,End Hour,Start Station,End Station,PHPDT
+2000-01-01,1,UP,19:00,20:00,SAP,SME,1
+2099-12-31,1,UP,19:00,20:00,SAP,SME,1

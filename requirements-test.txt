@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest>=8,<10
+responses>=0.25,<1
+pytest-socket>=0.7,<1
+pytest-cov>=6,<8

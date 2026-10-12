@@ -1,0 +1,35 @@
+name: Collector Tests
+
+on:
+  push:
+    branches:
+      - main
+      - "dev/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install reqs in tests
+        run: pip install -r requirements-test.txt
+      - name: Run collector benchmark
+        run: >-
+          python -m pytest --junitxml=test-results.xml
+          --cov=. --cov-report=term-missing --cov-report=xml
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-test-results
+          path: |
+            test-results.xml
+            coverage.xml
