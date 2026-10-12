@@ -90,6 +90,11 @@
         {"name": "Paper QR", "data": [60]}
       ]}]
     },
+    "empty_hourly": {
+      "daily": {"totalTickets": 150, "noOfNCMCcard": 100, "noOfPaperQR": 50},
+      "hourly": {"categories": [], "series": []},
+      "station": []
+    },
     "next_day": {
       "daily": {"totalTickets": 30, "noOfNCMCcard": 20, "noOfPaperQR": 10},
       "hourly": {"categories": ["2026-06-16T10:00:00"], "series": [

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
@@ -25,8 +25,13 @@ def retry_decision(record: dict[str, Any] | None, now: datetime | None = None) -
         return "skip"
     now = now or datetime.now(timezone.utc)
     started_at = datetime.fromisoformat(record["utc_timestamp"].replace("Z", "+00:00"))
-    if now.astimezone(IST).time().replace(tzinfo=None) >= RETRY_CUTOFF_IST:
+    now_ist = now.astimezone(IST)
+    dataset_date = date.fromisoformat(record["date"])
+    if (started_at.astimezone(IST).date() < now_ist.date() or dataset_date < now_ist.date()
+            or now_ist.time().replace(tzinfo=None) >= RETRY_CUTOFF_IST):
         return "expired"
+    if dataset_date > now_ist.date():
+        return "wait"
     if (now - started_at).total_seconds() >= RETRY_WAIT_MINUTES * 60:
         return "due"
     return "wait"
@@ -134,9 +139,12 @@ def read_last_line(path: str | Path, chunk_size: int = 4096) -> str | None:
             position -= read_size
             file.seek(position)
             buffer = file.read(read_size) + buffer
-            lines = [line.strip() for line in buffer.splitlines() if line.strip()]
-            if lines:
-                return lines[-1].decode("utf-8")
+            content = buffer.rstrip()
+            if not content:
+                continue
+            line_start = content.rfind(b"\n")
+            if line_start >= 0 or position == 0:
+                return content[line_start + 1:].strip().decode("utf-8")
 
     return None
 

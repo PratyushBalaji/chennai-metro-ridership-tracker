@@ -85,5 +85,9 @@ CI automatically includes the new tests in its full pytest run.
 
 `python ridership.py --retry` owns the retry flow. It checks the last log
 record, waits 15 minutes when needed, collects live data when due, and appends
-`resolved` or `expired`. Both workflows commit accepted CSV updates alongside
+`resolved` or `expired`. Retries expire at 23:50 IST or when their IST day ends.
+The returned date must match the pending record before any CSV writes.
+Empty hourly timestamps leave CSVs alone and exit 2: live data is pending retry,
+while yesterday's data needs review. Dry runs never write CSVs or logs.
+Both workflows commit accepted CSV updates alongside
 the anomaly log before rebasing, then report the collector's exit code.

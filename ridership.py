@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,8 @@ import requests
 
 from collector.anomalies import (
     ANOMALY_EXIT_CODE, ANOMALY_LOG_PATH, append_anomaly_record,
-    append_retry_status, has_anomalies, read_last_record, retry_decision,
+    append_jsonl, append_retry_status, build_log_record, has_anomalies,
+    read_last_record, retry_decision,
 )
 from collector.schemas import RIDERSHIP_DAILY, RIDERSHIP_HOURLY, RIDERSHIP_STATION
 from collector.upsert import UpsertResult, upsert_csv
@@ -22,6 +24,10 @@ STATION_FILENAME = "Ridership/ChennaiMetro_Station_Ridership.csv"
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
 REQUEST_TIMEOUT_SECONDS = 30
+
+
+class PayloadUnavailableError(ValueError):
+    pass
 
 STATION_CODES = {
     # Blue Line
@@ -101,9 +107,9 @@ def fetch_ridership_payloads(day: str, api_response: str | Path | None = None) -
 
 
 def extract_dataset_date(hourly_response: dict[str, Any]) -> str:
-    categories = hourly_response.get("categories") or []
-    if not categories:
-        raise ValueError("Hourly ridership response has no timestamp categories")
+    categories = hourly_response.get("categories") if isinstance(hourly_response, dict) else None
+    if not categories or not categories[0]:
+        raise PayloadUnavailableError("Hourly ridership response has no timestamp categories")
     return pd.to_datetime(categories[0]).strftime("%Y-%m-%d")
 
 
@@ -164,9 +170,33 @@ def collect_ridership(
     dry_run: bool = False,
     anomaly_log: str | Path = ANOMALY_LOG_PATH,
     api_response: str | Path | None = None,
+    expected_date: str | None = None,
 ) -> list[UpsertResult]:
     daily_payload, hourly_payload, station_payload = fetch_ridership_payloads(day, api_response)
-    date = extract_dataset_date(hourly_payload)
+    try:
+        date = extract_dataset_date(hourly_payload)
+    except PayloadUnavailableError:
+        date = None
+    problem = None
+    if date is None:
+        problem = "payload_missing_hourly_categories"
+    elif expected_date is not None and date != expected_date:
+        problem = "payload_date_mismatch"
+    if problem:
+        if not dry_run:
+            summary = summarize_payloads(daily_payload, hourly_payload, station_payload)
+            summary["returned_dataset_date"] = date
+            summary["date_inferred"] = expected_date is None
+            record = build_log_record(
+                source="ridership", day=day, dataset_date=expected_date or "",
+                status="pending_retry" if day == "0" else "needs_review",
+                reason=problem, payload_summary=summary,
+            )
+            if expected_date is None:
+                ist_date = datetime.fromisoformat(record["ist_timestamp"]).date()
+                record["date"] = (ist_date - timedelta(days=int(day))).isoformat()
+            append_jsonl(_resolve_output_path(output_dir, anomaly_log), record)
+        raise PayloadUnavailableError(problem)
 
     datasets = [
         (Path(output_dir) / DAILY_FILENAME, normalize_daily(daily_payload, date), RIDERSHIP_DAILY),
@@ -204,7 +234,7 @@ def summarize_payloads(
     hourly_payload: dict[str, Any],
     station_payload: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    categories = hourly_payload.get("categories") or []
+    categories = (hourly_payload.get("categories") or []) if isinstance(hourly_payload, dict) else []
     return {
         "daily_total": daily_payload.get("totalTickets"),
         "daily_fields": len(daily_payload),
@@ -258,6 +288,7 @@ def retry_ridership(args: argparse.Namespace) -> int:
     results = collect_ridership(
         day="0", output_dir=args.output_dir, dry_run=args.dry_run,
         anomaly_log=args.anomaly_log, api_response=args.api_response,
+        expected_date=previous["date"],
     )
     if has_anomalies(results):
         return ANOMALY_EXIT_CODE
@@ -268,20 +299,20 @@ def retry_ridership(args: argparse.Namespace) -> int:
 
 def main() -> None:
     args = parse_args()
-    if args.retry:
-        code = retry_ridership(args)
-        if code:
-            raise SystemExit(code)
-        return
-    results = collect_ridership(
-        day=args.day,
-        output_dir=args.output_dir,
-        dry_run=args.dry_run,
-        anomaly_log=args.anomaly_log,
-        api_response=args.api_response,
-    )
-    if has_anomalies(results):
-        raise SystemExit(ANOMALY_EXIT_CODE)
+    try:
+        if args.retry:
+            code = retry_ridership(args)
+        else:
+            results = collect_ridership(
+                day=args.day, output_dir=args.output_dir, dry_run=args.dry_run,
+                anomaly_log=args.anomaly_log, api_response=args.api_response,
+            )
+            code = ANOMALY_EXIT_CODE if has_anomalies(results) else 0
+    except PayloadUnavailableError as error:
+        print(f"ridership: {error}")
+        code = ANOMALY_EXIT_CODE
+    if code:
+        raise SystemExit(code)
 
 
 if __name__ == "__main__":
