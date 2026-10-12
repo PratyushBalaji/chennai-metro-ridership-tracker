@@ -90,3 +90,41 @@ def test_parking_can_use_dataset_date_from_workflow(tmp_path, http_mock, run_col
     for filename in FILES["parking"]:
         assert_frame_equal(canonical(read_csv(tmp_path / filename)),
                            canonical(read_csv(FIXTURES / "expected" / filename)))
+
+
+def test_ridership_cli_file_input_matches_expected_csvs(tmp_path, http_mock, run_collector):
+    output_dir = tmp_path / "separate output"
+    run_collector("ridership", "--api-response", FIXTURES / "api/day1.json",
+                  "--output-dir", output_dir)
+    assert len(http_mock.calls) == 0
+    assert {path.relative_to(output_dir).as_posix() for path in output_dir.rglob("*.csv")} == set(FILES["ridership"])
+    for filename in FILES["ridership"]:
+        assert_frame_equal(canonical(read_csv(output_dir / filename)),
+                           canonical(read_csv(FIXTURES / "expected" / filename)))
+        assert not (tmp_path / filename).exists()
+
+
+@pytest.mark.parametrize("position", ("before_latest", "same_latest", "after_latest"))
+def test_ridership_cli_file_input_with_existing_csv(position, tmp_path, http_mock, run_collector):
+    output_dir = tmp_path / "output"
+    before = {}
+    for filename in FILES["ridership"]:
+        incoming = read_csv(FIXTURES / "expected" / filename)
+        seed = read_csv(FIXTURES / "seed" / filename)
+        if position == "same_latest":
+            seed = pd.concat([seed[seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
+        elif position == "after_latest":
+            seed = seed[seed["Date"] == "2000-01-01"].reset_index(drop=True)
+        output = output_dir / filename
+        output.parent.mkdir(parents=True, exist_ok=True)
+        seed.to_csv(output, index=False)
+        before[filename] = seed
+
+    for _ in range(2):
+        run_collector("ridership", "--api-response", FIXTURES / "api/day1.json",
+                      "--output-dir", output_dir)
+        for filename, seed in before.items():
+            incoming = read_csv(FIXTURES / "expected" / filename)
+            expected = seed if position == "same_latest" else pd.concat([seed, incoming], ignore_index=True)
+            assert_frame_equal(canonical(read_csv(output_dir / filename)), canonical(expected))
+    assert len(http_mock.calls) == 0

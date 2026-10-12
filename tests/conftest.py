@@ -31,7 +31,7 @@ def run_collector(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DATASET_DATE", raising=False)
 
-    def run(name):
-        monkeypatch.setattr(sys, "argv", [f"{name}.py"])
+    def run(name, *args):
+        monkeypatch.setattr(sys, "argv", [f"{name}.py", *map(str, args)])
         runpy.run_path(str(ROOT / f"{name}.py"), run_name="__main__")
     return run

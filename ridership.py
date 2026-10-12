@@ -1,3 +1,5 @@
+import argparse
+import json
 import requests
 import pandas as pd
 import os
@@ -6,9 +8,15 @@ import os
 SETUP
 """
 
-DAILY_FILENAME = "Ridership/ChennaiMetro_Daily_Ridership.csv"
-HOURLY_FILENAME = "Ridership/ChennaiMetro_Hourly_Ridership.csv"
-STATION_FILENAME = "Ridership/ChennaiMetro_Station_Ridership.csv"
+parser = argparse.ArgumentParser(description="Collect Chennai Metro ridership data.")
+parser.add_argument("--api-response", help="Read a JSON response bundle instead of calling the API")
+parser.add_argument("--output-dir", default=".", help="Directory containing the Ridership output folder")
+args = parser.parse_args()
+
+DAILY_FILENAME = os.path.join(args.output_dir, "Ridership/ChennaiMetro_Daily_Ridership.csv")
+HOURLY_FILENAME = os.path.join(args.output_dir, "Ridership/ChennaiMetro_Hourly_Ridership.csv")
+STATION_FILENAME = os.path.join(args.output_dir, "Ridership/ChennaiMetro_Station_Ridership.csv")
+os.makedirs(os.path.dirname(DAILY_FILENAME), exist_ok=True)
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
 DAY = "1" # '1' for previous day, '0' for current day
@@ -114,11 +122,23 @@ else:
 DATA COLLECTION AND BASIC PROCESSING
 """
 
+def fetch_json(url, api_response=None):
+    if api_response is not None:
+        with open(api_response, encoding="utf-8") as file:
+            bundle = json.load(file)
+        if not isinstance(bundle, dict) or not isinstance(bundle.get("responses"), dict):
+            raise ValueError("API response file must contain a 'responses' object keyed by URL")
+        if url not in bundle["responses"]:
+            raise ValueError(f"API response file has no response for {url}")
+        return bundle["responses"][url]
+    return requests.get(url).json()
+
+
 def get_daily_ticket_count():
-    return requests.get(DAILY_TICKET_COUNT_URL).json()
+    return fetch_json(DAILY_TICKET_COUNT_URL, args.api_response)
 
 def get_hourly_passenger_data():
-    response = requests.get(HOURLY_PASSENGER_DATA_URL).json()
+    response = fetch_json(HOURLY_PASSENGER_DATA_URL, args.api_response)
     hourly_data = {
         'date': pd.to_datetime(response['categories'][0]).strftime('%Y-%m-%d'),
         'timestamps': [pd.to_datetime(ts).strftime('%H:%M') for ts in response['categories']],
@@ -127,7 +147,7 @@ def get_hourly_passenger_data():
     return hourly_data
 
 def get_station_flow_data():
-    response = requests.get(STATION_FLOW_DATA_URL).json()
+    response = fetch_json(STATION_FLOW_DATA_URL, args.api_response)
     station_data = {}
     for line_data in response:
         line_number = line_data['line']
