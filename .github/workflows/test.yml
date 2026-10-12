@@ -1,4 +1,4 @@
-name: Test
+name: Collector Tests
 
 on:
   push:
@@ -14,22 +14,40 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      PYTHONPATH: ${{ github.workspace }}
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest
-
-      - name: Run tests
-        run: python -m pytest tests
+      - name: Install reqs in tests
+        run: pip install -r requirements-test.txt
+      - name: Run ridership with fixed API response
+        run: >-
+          python ridership.py
+          --api-response tests/fixtures/api/day1.json
+          --output-dir "$RUNNER_TEMP/ridership-cli"
+      - name: Run parking with fixed API response
+        run: >-
+          python parking.py
+          --api-response tests/fixtures/api/day1.json
+          --output-dir "$RUNNER_TEMP/parking-cli"
+      - name: Run PHPDT with fixed API response
+        run: >-
+          python phpdt.py
+          --api-response tests/fixtures/api/day1.json
+          --output-dir "$RUNNER_TEMP/phpdt-cli"
+      - name: Run collector benchmark
+        run: >-
+          python -m pytest --junitxml=test-results.xml
+          --cov=. --cov-report=term-missing --cov-report=xml
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-test-results
+          path: |
+            test-results.xml
+            coverage.xml
+            ${{ runner.temp }}/ridership-cli/Ridership/*.csv
+            ${{ runner.temp }}/parking-cli/Parking/*.csv
+            ${{ runner.temp }}/phpdt-cli/PHPDT/*.csv

@@ -1,0 +1,11 @@
+[run]
+branch = True
+source = .
+omit =
+    tests/*
+
+[report]
+include =
+    ridership.py
+    parking.py
+    phpdt.py

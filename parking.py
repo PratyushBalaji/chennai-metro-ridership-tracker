@@ -1,3 +1,5 @@
+import argparse
+import json
 import requests
 import pandas as pd
 import os
@@ -6,9 +8,15 @@ import os
 SETUP
 """
 
-DAILY_FILENAME = "Parking/ChennaiMetro_Daily_Parking.csv"
-HOURLY_FILENAME = "Parking/ChennaiMetro_Hourly_Parking.csv"
-STATION_FILENAME = "Parking/ChennaiMetro_Station_Parking.csv"
+parser = argparse.ArgumentParser(description="Collect Chennai Metro parking data.")
+parser.add_argument("--api-response", help="Read a JSON response bundle instead of calling the API")
+parser.add_argument("--output-dir", default=".", help="Directory containing the Parking output folder")
+args = parser.parse_args()
+
+DAILY_FILENAME = os.path.join(args.output_dir, "Parking/ChennaiMetro_Daily_Parking.csv")
+HOURLY_FILENAME = os.path.join(args.output_dir, "Parking/ChennaiMetro_Hourly_Parking.csv")
+STATION_FILENAME = os.path.join(args.output_dir, "Parking/ChennaiMetro_Station_Parking.csv")
+os.makedirs(os.path.dirname(DAILY_FILENAME), exist_ok=True)
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/parkingdashboard/"
 DAY = "1"
@@ -111,11 +119,23 @@ else:
 DATA COLLECTION AND BASIC PROCESSING
 """
 
+def fetch_json(url, api_response=None):
+    if api_response is not None:
+        with open(api_response, encoding="utf-8") as file:
+            bundle = json.load(file)
+        if not isinstance(bundle, dict) or not isinstance(bundle.get("responses"), dict):
+            raise ValueError("API response file must contain a 'responses' object keyed by URL")
+        if url not in bundle["responses"]:
+            raise ValueError(f"API response file has no response for {url}")
+        return bundle["responses"][url]
+    return requests.get(url).json()
+
+
 def get_daily_parking():
-    return requests.get(DAILY_PARKING_URL).json()
+    return fetch_json(DAILY_PARKING_URL, args.api_response)
 
 def get_hourly_parking():
-    response = requests.get(HOURLY_PARKING_URL).json()
+    response = fetch_json(HOURLY_PARKING_URL, args.api_response)
     hourly_data = {
         'times': [t[:5] for t in response['categories']],
         'series': {s['name']: s['data'] for s in response['series']}
@@ -123,7 +143,7 @@ def get_hourly_parking():
     return hourly_data
 
 def get_station_parking():
-    response = requests.get(STATION_PARKING_URL).json()
+    response = fetch_json(STATION_PARKING_URL, args.api_response)
     station_data = {}
     for line_data in response:
         line_number = line_data['line']
@@ -143,7 +163,7 @@ if _env_date:
     DATE = _env_date
 else:
     # Fallback : Extract date from ridership API
-    ridership_hourly_response = requests.get(RIDERSHIP_HOURLY_URL).json()
+    ridership_hourly_response = fetch_json(RIDERSHIP_HOURLY_URL, args.api_response)
     DATE = pd.to_datetime(ridership_hourly_response['categories'][0]).strftime('%Y-%m-%d')
 
 """

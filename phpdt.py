@@ -1,3 +1,5 @@
+import argparse
+import json
 import requests
 import pandas as pd
 import os
@@ -6,7 +8,12 @@ import os
 SETUP
 """
 
-DAILY_FILENAME = "PHPDT/ChennaiMetro_Daily_PHPDT.csv"
+parser = argparse.ArgumentParser(description="Collect Chennai Metro PHPDT data.")
+parser.add_argument("--api-response", help="Read a JSON response bundle instead of calling the API")
+parser.add_argument("--output-dir", default=".", help="Directory containing the PHPDT output folder")
+args = parser.parse_args()
+
+DAILY_FILENAME = os.path.join(args.output_dir, "PHPDT/ChennaiMetro_Daily_PHPDT.csv")
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
 
@@ -52,8 +59,20 @@ else:
 DATA COLLECTION AND BASIC PROCESSING
 """
 
+def fetch_json(url, api_response=None):
+    if api_response is not None:
+        with open(api_response, encoding="utf-8") as file:
+            bundle = json.load(file)
+        if not isinstance(bundle, dict) or not isinstance(bundle.get("responses"), dict):
+            raise ValueError("API response file must contain a 'responses' object keyed by URL")
+        if url not in bundle["responses"]:
+            raise ValueError(f"API response file has no response for {url}")
+        return bundle["responses"][url]
+    return requests.get(url).json()
+
+
 def get_phpdt_data():
-    return requests.get(PHPDT_URL).json()
+    return fetch_json(PHPDT_URL, args.api_response)
 
 phpdt_response = get_phpdt_data()
 

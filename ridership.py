@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -75,16 +76,24 @@ def convert_station_code(station_name: str) -> str:
     return STATION_CODES.get(station_name, station_name)
 
 
-def fetch_json(url: str) -> Any:
+def fetch_json(url: str, api_response: str | Path | None = None) -> Any:
+    if api_response is not None:
+        with open(api_response, encoding="utf-8") as file:
+            bundle = json.load(file)
+        if not isinstance(bundle, dict) or not isinstance(bundle.get("responses"), dict):
+            raise ValueError("API response file must contain a 'responses' object keyed by URL")
+        if url not in bundle["responses"]:
+            raise ValueError(f"API response file has no response for {url}")
+        return bundle["responses"][url]
     response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
     response.raise_for_status()
     return response.json()
 
 
-def fetch_ridership_payloads(day: str) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
-    daily = fetch_json(endpoint("allTicketCount", day))
-    hourly = fetch_json(endpoint("hourlybaseddata", day))
-    station = fetch_json(endpoint("stationData", day))
+def fetch_ridership_payloads(day: str, api_response: str | Path | None = None) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    daily = fetch_json(endpoint("allTicketCount", day), api_response)
+    hourly = fetch_json(endpoint("hourlybaseddata", day), api_response)
+    station = fetch_json(endpoint("stationData", day), api_response)
     return daily, hourly, station
 
 
@@ -151,8 +160,9 @@ def collect_ridership(
     output_dir: str | Path = ".",
     dry_run: bool = False,
     anomaly_log: str | Path = ANOMALY_LOG_PATH,
+    api_response: str | Path | None = None,
 ) -> list[UpsertResult]:
-    daily_payload, hourly_payload, station_payload = fetch_ridership_payloads(day)
+    daily_payload, hourly_payload, station_payload = fetch_ridership_payloads(day, api_response)
     date = extract_dataset_date(hourly_payload)
 
     datasets = [
@@ -222,6 +232,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Collect Chennai Metro ridership data.")
     parser.add_argument("--day", default="1", choices=("0", "1"), help="CMRL day selector: 0=today, 1=yesterday")
     parser.add_argument("--output-dir", default=".", help="Directory containing the Ridership output folder")
+    parser.add_argument("--api-response", type=Path, help="Read a JSON response bundle instead of calling the API")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and normalize without writing CSV files")
     parser.add_argument("--strict", action="store_true", help="Use strict upsert checks")
     parser.add_argument("--anomaly-log", default=ANOMALY_LOG_PATH, help="Append-only JSONL anomaly log path")
@@ -235,6 +246,7 @@ def main() -> None:
         output_dir=args.output_dir,
         dry_run=args.dry_run,
         anomaly_log=args.anomaly_log,
+        api_response=args.api_response,
     )
     if has_anomalies(results):
         raise SystemExit(ANOMALY_EXIT_CODE)
