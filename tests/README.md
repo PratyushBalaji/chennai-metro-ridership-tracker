@@ -26,16 +26,20 @@ Existing rows must survive and a repeat of the latest payload must not add
 duplicates. The benchmark also checks empty CSVs and parking's `DATASET_DATE`
 workflow input.
 
-Ridership also accepts the same fixed responses directly from the command line:
+All three collectors accept the same fixed responses directly from the command line:
 
 ```sh
 python ridership.py --api-response tests/fixtures/api/day1.json --output-dir test-output
+python parking.py --api-response tests/fixtures/api/day1.json --output-dir test-output
+python phpdt.py --api-response tests/fixtures/api/day1.json --output-dir test-output
 ```
 
-This writes the three CSVs under `test-output/Ridership/`. Without
-`--api-response`, the same script calls the live API. Without `--output-dir`,
-it uses the usual `Ridership/` folder. The CLI tests run the root script with
-these flags, compare the output CSVs and verify that no HTTP calls happened.
+This writes CSVs under `test-output/Ridership/`, `test-output/Parking/` and
+`test-output/PHPDT/`. Without `--api-response`, the scripts call the live API.
+Without `--output-dir`, they use the usual output folders. The CLI tests run
+the root scripts with these flags, compare the CSVs and verify that no HTTP
+calls happened. Parking's date fallback also reads from the JSON file;
+`DATASET_DATE` still takes precedence when supplied by the workflow.
 
 This does not require live counts to increase, reject regressions, check mixed
 rows or implement arbitrary historical replay. Those are tests for the next
@@ -50,8 +54,8 @@ python tests/record_api_responses.py --day 1 --output tests/fixtures/api/day1.js
 Review changes to the JSON and expected CSVs together. Tests never regenerate
 expected CSVs automatically.
 
-GitHub Actions first runs the root `ridership.py` with `--api-response` and
+GitHub Actions first runs each root collector with `--api-response` and
 `--output-dir`, then runs pytest on main, dev branches and PRs. The generated
 CSVs, JUnit results and coverage report are uploaded. The original functionality has 19 benchmark tests,
-plus four tests for the file-input CLI. This is a
+plus 13 tests for the file-input CLI. This is a
 regression benchmark, not a guarantee about future CMRL availability.

@@ -92,23 +92,25 @@ def test_parking_can_use_dataset_date_from_workflow(tmp_path, http_mock, run_col
                            canonical(read_csv(FIXTURES / "expected" / filename)))
 
 
-def test_ridership_cli_file_input_matches_expected_csvs(tmp_path, http_mock, run_collector):
+@pytest.mark.parametrize("script", FILES)
+def test_cli_file_input_matches_expected_csvs(script, tmp_path, http_mock, run_collector):
     output_dir = tmp_path / "separate output"
-    run_collector("ridership", "--api-response", FIXTURES / "api/day1.json",
+    run_collector(script, "--api-response", FIXTURES / "api/day1.json",
                   "--output-dir", output_dir)
     assert len(http_mock.calls) == 0
-    assert {path.relative_to(output_dir).as_posix() for path in output_dir.rglob("*.csv")} == set(FILES["ridership"])
-    for filename in FILES["ridership"]:
+    assert {path.relative_to(output_dir).as_posix() for path in output_dir.rglob("*.csv")} == set(FILES[script])
+    for filename in FILES[script]:
         assert_frame_equal(canonical(read_csv(output_dir / filename)),
                            canonical(read_csv(FIXTURES / "expected" / filename)))
         assert not (tmp_path / filename).exists()
 
 
+@pytest.mark.parametrize("script", FILES)
 @pytest.mark.parametrize("position", ("before_latest", "same_latest", "after_latest"))
-def test_ridership_cli_file_input_with_existing_csv(position, tmp_path, http_mock, run_collector):
+def test_cli_file_input_with_existing_csv(script, position, tmp_path, http_mock, run_collector):
     output_dir = tmp_path / "output"
     before = {}
-    for filename in FILES["ridership"]:
+    for filename in FILES[script]:
         incoming = read_csv(FIXTURES / "expected" / filename)
         seed = read_csv(FIXTURES / "seed" / filename)
         if position == "same_latest":
@@ -121,10 +123,26 @@ def test_ridership_cli_file_input_with_existing_csv(position, tmp_path, http_moc
         before[filename] = seed
 
     for _ in range(2):
-        run_collector("ridership", "--api-response", FIXTURES / "api/day1.json",
+        run_collector(script, "--api-response", FIXTURES / "api/day1.json",
                       "--output-dir", output_dir)
         for filename, seed in before.items():
             incoming = read_csv(FIXTURES / "expected" / filename)
             expected = seed if position == "same_latest" else pd.concat([seed, incoming], ignore_index=True)
             assert_frame_equal(canonical(read_csv(output_dir / filename)), canonical(expected))
     assert len(http_mock.calls) == 0
+
+
+def test_parking_cli_file_input_with_workflow_date(tmp_path, http_mock, run_collector, monkeypatch, api_bundle):
+    import json
+
+    bundle = {"responses": {url: payload for url, payload in api_bundle["responses"].items()
+                            if "/parkingdashboard/" in url}}
+    response_file = tmp_path / "parking-only.json"
+    response_file.write_text(json.dumps(bundle), encoding="utf-8")
+    monkeypatch.setenv("DATASET_DATE", "2026-10-11")
+    output_dir = tmp_path / "output"
+    run_collector("parking", "--api-response", response_file, "--output-dir", output_dir)
+    assert len(http_mock.calls) == 0
+    for filename in FILES["parking"]:
+        assert_frame_equal(canonical(read_csv(output_dir / filename)),
+                           canonical(read_csv(FIXTURES / "expected" / filename)))
