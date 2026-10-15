@@ -4,6 +4,8 @@ import requests
 import pandas as pd
 import os
 
+from collector import append_csv, read_csv
+
 """
 SETUP
 """
@@ -67,12 +69,25 @@ STATION_CODES = { # one-to-one mapping -> more compact and unambiguous
     "KOYAMBEDU":"SKO",
     "CMBT":"SCM",
     "ARUMBAKKAM":"SAR",
-    "VADAPALANI":"SVA",
     "ASHOK NAGAR":"SAN",
     "EKKATTUTHANGAL":"SSI",
     "St. THOMAS MOUNT":"SMM",
 
-    # Interchange station
+    # Yellow Line
+    "POONAMALLEE BYPASS METRO":"PBYM",
+    # Temporary five-letter placeholders; replace when published station codes are available.
+    "POONAMALLEE BUS STAND METRO":"PNMBS",
+    "POONAMALLEE GOVERNMENT HOSPITAL METRO":"PNMGH",
+    "KARAYANCHAVADI METRO":"KRYCH",
+    "KUMANANCHAVADI METRO":"KMNCH",
+    "KATTUPAKKAM METRO":"KTTPK",
+    "IYAPPANTHANGAL METRO":"IYPTH",
+    "THELLIYARAGARAM METRO":"THLYR",
+    "PORUR BYPASS METRO":"PRBYP",
+    "PORUR JUNCTION METRO":"PRJNC",
+
+    # Interchange stations
+    "VADAPALANI":"SVA",
     "CENTRAL  METRO":"SCC",
     "ALANDUR":"SAL",
 }
@@ -84,39 +99,13 @@ def convert_station_code(station_name):
 CSV VALIDATION
 """
 
-last_daily_date = None
-last_hourly_date = None
-last_station_date = None
+daily_df = read_csv(DAILY_FILENAME)
+hourly_df = read_csv(HOURLY_FILENAME)
+station_df = read_csv(STATION_FILENAME)
 
-if not os.path.exists(DAILY_FILENAME):
-    pd.DataFrame().to_csv(DAILY_FILENAME, index=False)
-else:
-    try:
-        daily_df = pd.read_csv(DAILY_FILENAME)
-        if not daily_df.empty:
-            last_daily_date = daily_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
-
-if not os.path.exists(HOURLY_FILENAME):
-    pd.DataFrame().to_csv(HOURLY_FILENAME, index=False)
-else:
-    try:
-        hourly_df = pd.read_csv(HOURLY_FILENAME)
-        if not hourly_df.empty:
-            last_hourly_date = hourly_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
-
-if not os.path.exists(STATION_FILENAME):
-    pd.DataFrame().to_csv(STATION_FILENAME, index=False)
-else:
-    try:
-        station_df = pd.read_csv(STATION_FILENAME)
-        if not station_df.empty:
-            last_station_date = station_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
+last_daily_date = daily_df["Date"].iloc[-1] if not daily_df.empty else None
+last_hourly_date = hourly_df["Date"].iloc[-1] if not hourly_df.empty else None
+last_station_date = station_df["Date"].iloc[-1] if not station_df.empty else None
 
 """
 DATA COLLECTION AND BASIC PROCESSING
@@ -131,7 +120,9 @@ def fetch_json(url, api_response=None):
         if url not in bundle["responses"]:
             raise ValueError(f"API response file has no response for {url}")
         return bundle["responses"][url]
-    return requests.get(url).json()
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    return response.json()
 
 
 def get_daily_ticket_count():
@@ -187,12 +178,8 @@ if DATE != last_daily_date: # if not already at latest date
     
     daily_df_new = pd.DataFrame([daily_row])
     
-    if last_daily_date is None: # no first entry
-        daily_df_new.to_csv(DAILY_FILENAME, index=False, header=True)
-        print(f"Created {DAILY_FILENAME} with data for {DATE}") # create new file
-    else: # else append
-        daily_df_new.to_csv(DAILY_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended daily data for {DATE}")
+    append_csv(DAILY_FILENAME, daily_df, daily_df_new, zero_columns=("noOfUTPQR",))
+    print(f"Saved daily ridership data for {DATE}")
 else:
     print(f"Daily data for {DATE} already exists. Skipping.")
 
@@ -215,19 +202,14 @@ if DATE != last_hourly_date:
     
     hourly_df_new = pd.DataFrame(hourly_rows)
     
-    if last_hourly_date is None:
-        hourly_df_new.to_csv(HOURLY_FILENAME, index=False, header=True)
-        print(f"Created {HOURLY_FILENAME} with {len(hourly_rows)} entries for {DATE}")
-    else:
-        hourly_df_new.to_csv(HOURLY_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended {len(hourly_rows)} hourly entries for {DATE}")
+    append_csv(HOURLY_FILENAME, hourly_df, hourly_df_new, zero_columns=("UTP QR",))
+    print(f"Saved hourly ridership data for {DATE}")
 else:
     print(f"Hourly data for {DATE} already exists. Skipping.")
 
 # STATIONWISE CSV
 if DATE != last_station_date:
-    first_line_key = list(station_flows.keys())[0]
-    station_payment_methods = sorted([key for key in station_flows[first_line_key]['series'].keys() if key != 'Total'])
+    station_payment_methods = sorted({key for line in station_flows.values() for key in line['series'] if key != 'Total'})
     
     station_headers = ['Date', 'Line', 'Station', 'Total'] + station_payment_methods
     
@@ -242,16 +224,12 @@ if DATE != last_station_date:
                 'Total': line_data['series']['Total'][i]
             }
             for method in station_payment_methods:
-                row[method] = line_data['series'][method][i]
+                row[method] = line_data['series'][method][i] if method in line_data['series'] else None
             station_rows.append(row)
     
-    station_df_new = pd.DataFrame(station_rows)
+    station_df_new = pd.DataFrame(station_rows, columns=station_headers, dtype=object)
     
-    if last_station_date is None:
-        station_df_new.to_csv(STATION_FILENAME, index=False, header=True)
-        print(f"Created {STATION_FILENAME} with {len(station_rows)} entries for {DATE}")
-    else:
-        station_df_new.to_csv(STATION_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended {len(station_rows)} station entries for {DATE}")
+    append_csv(STATION_FILENAME, station_df, station_df_new, zero_columns=("UTP QR",))
+    print(f"Saved station ridership data for {DATE}")
 else:
     print(f"Station data for {DATE} already exists. Skipping.")

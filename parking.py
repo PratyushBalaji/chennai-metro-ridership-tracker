@@ -4,6 +4,8 @@ import requests
 import pandas as pd
 import os
 
+from collector import append_csv, read_csv, normalize_parking_columns, write_csv_atomic
+
 """
 SETUP
 """
@@ -72,6 +74,15 @@ PARKING_STATION_CODES = {
     "Ekkattuthangal": "SSI",
     "Arignar Anna Alandur ": "SAL",
     "St. Thomas Mount": "SMM",
+
+    # Yellow Line; match ridership's temporary codes.
+    "Poonamallee Bypass Metro": "PBYM",
+    "Poonamallee Government Hospital Metro": "PNMGH",
+    "Karayanchavadi Metro": "KRYCH",
+    "Kattupakkam Metro": "KTTPK",
+    "Iyyapanthangal Metro": "IYPTH",
+    "Thelliyaragaram Metro": "THLYR",
+    "Porur Junction Metro": "PRJNC",
 }
 
 def convert_parking_station_code(station_name):
@@ -81,39 +92,15 @@ def convert_parking_station_code(station_name):
 CSV VALIDATION
 """
 
-last_daily_date = None
-last_hourly_date = None
-last_station_date = None
+daily_df = read_csv(DAILY_FILENAME)
+hourly_df = read_csv(HOURLY_FILENAME)
+station_df = read_csv(STATION_FILENAME)
+station_header_changed = 'Eight Wheleer' in station_df
+station_df = normalize_parking_columns(station_df)
 
-if not os.path.exists(DAILY_FILENAME):
-    pd.DataFrame().to_csv(DAILY_FILENAME, index=False)
-else:
-    try:
-        daily_df = pd.read_csv(DAILY_FILENAME)
-        if not daily_df.empty:
-            last_daily_date = daily_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
-
-if not os.path.exists(HOURLY_FILENAME):
-    pd.DataFrame().to_csv(HOURLY_FILENAME, index=False)
-else:
-    try:
-        hourly_df = pd.read_csv(HOURLY_FILENAME)
-        if not hourly_df.empty:
-            last_hourly_date = hourly_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
-
-if not os.path.exists(STATION_FILENAME):
-    pd.DataFrame().to_csv(STATION_FILENAME, index=False)
-else:
-    try:
-        station_df = pd.read_csv(STATION_FILENAME)
-        if not station_df.empty:
-            last_station_date = station_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
+last_daily_date = daily_df["Date"].iloc[-1] if not daily_df.empty else None
+last_hourly_date = hourly_df["Date"].iloc[-1] if not hourly_df.empty else None
+last_station_date = station_df["Date"].iloc[-1] if not station_df.empty else None
 
 """
 DATA COLLECTION AND BASIC PROCESSING
@@ -128,7 +115,9 @@ def fetch_json(url, api_response=None):
         if url not in bundle["responses"]:
             raise ValueError(f"API response file has no response for {url}")
         return bundle["responses"][url]
-    return requests.get(url).json()
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    return response.json()
 
 
 def get_daily_parking():
@@ -146,6 +135,7 @@ def get_station_parking():
     response = fetch_json(STATION_PARKING_URL, args.api_response)
     station_data = {}
     for line_data in response:
+        normalize_parking_columns(pd.DataFrame({s['name']: s['data'] for s in line_data['series']}))
         line_number = line_data['line']
         station_data[line_number] = {
             'stations': list(map(convert_parking_station_code, line_data['categories'])),
@@ -191,12 +181,8 @@ if DATE != last_daily_date:
     
     daily_df_new = pd.DataFrame([daily_row])
     
-    if last_daily_date is None:
-        daily_df_new.to_csv(DAILY_FILENAME, index=False, header=True)
-        print(f"Created {DAILY_FILENAME} with data for {DATE}")
-    else:
-        daily_df_new.to_csv(DAILY_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended daily parking data for {DATE}")
+    append_csv(DAILY_FILENAME, daily_df, daily_df_new)
+    print(f"Saved daily parking data for {DATE}")
 else:
     print(f"Daily parking data for {DATE} already exists. Skipping.")
 
@@ -219,12 +205,8 @@ if DATE != last_hourly_date:
     
     hourly_df_new = pd.DataFrame(hourly_rows)
     
-    if last_hourly_date is None:
-        hourly_df_new.to_csv(HOURLY_FILENAME, index=False, header=True)
-        print(f"Created {HOURLY_FILENAME} with {len(hourly_rows)} entries for {DATE}")
-    else:
-        hourly_df_new.to_csv(HOURLY_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended {len(hourly_rows)} hourly parking entries for {DATE}")
+    append_csv(HOURLY_FILENAME, hourly_df, hourly_df_new)
+    print(f"Saved hourly parking data for {DATE}")
 else:
     print(f"Hourly parking data for {DATE} already exists. Skipping.")
 
@@ -250,13 +232,11 @@ if DATE != last_station_date:
                 row[vtype] = line_data['series'][vtype][i]
             station_rows.append(row)
     
-    station_df_new = pd.DataFrame(station_rows)
+    station_df_new = normalize_parking_columns(pd.DataFrame(station_rows))
     
-    if last_station_date is None:
-        station_df_new.to_csv(STATION_FILENAME, index=False, header=True)
-        print(f"Created {STATION_FILENAME} with {len(station_rows)} entries for {DATE}")
-    else:
-        station_df_new.to_csv(STATION_FILENAME, index=False, mode='a', header=False)
-        print(f"Appended {len(station_rows)} station parking entries for {DATE}")
+    append_csv(STATION_FILENAME, station_df, station_df_new)
+    print(f"Saved station parking data for {DATE}")
 else:
+    if station_header_changed:
+        write_csv_atomic(STATION_FILENAME, station_df)
     print(f"Station parking data for {DATE} already exists. Skipping.")

@@ -4,6 +4,8 @@ import requests
 import pandas as pd
 import os
 
+from collector import append_csv, read_csv
+
 """
 SETUP
 """
@@ -27,6 +29,9 @@ ROUTE_MAPPING = {
     # Line 2 (Green Line)
     "smMtoSCCViewModel": {"line": "2", "direction": "UP", "from": "SMM", "to": "SCC"},
     "scCtoSMMViewModel": {"line": "2", "direction": "DOWN", "from": "SCC", "to": "SMM"},
+    # Line 4 (Yellow Line)
+    "poBtoSVAViewModel": {"line": "04", "direction": "UP", "from": "PBYM", "to": "SVA"},
+    "svAtoPOBViewModel": {"line": "04", "direction": "DOWN", "from": "SVA", "to": "PBYM"},
 }
 
 def extract_station_code(corridor):
@@ -34,7 +39,7 @@ def extract_station_code(corridor):
     corridor = "".join([i for i in corridor if i.isalpha() or i == '_']) # remove non-alpha chars
     parts = corridor.split("_")
     if len(parts) == 2:
-        return parts[0].upper(), parts[1].upper()
+        return tuple("PBYM" if part.upper() == "POB" else part.upper() for part in parts)
     
     return None, None
 
@@ -42,18 +47,7 @@ def extract_station_code(corridor):
 CSV VALIDATION
 """
 
-last_phpdt_date = None
-
-if not os.path.exists(DAILY_FILENAME):
-    os.makedirs(os.path.dirname(DAILY_FILENAME), exist_ok=True)
-    pd.DataFrame().to_csv(DAILY_FILENAME, index=False)
-else:
-    try:
-        phpdt_df = pd.read_csv(DAILY_FILENAME)
-        if not phpdt_df.empty:
-            last_phpdt_date = phpdt_df['Date'].iloc[-1]
-    except pd.errors.EmptyDataError:
-        pass
+phpdt_df = read_csv(DAILY_FILENAME)
 
 """
 DATA COLLECTION AND BASIC PROCESSING
@@ -68,13 +62,19 @@ def fetch_json(url, api_response=None):
         if url not in bundle["responses"]:
             raise ValueError(f"API response file has no response for {url}")
         return bundle["responses"][url]
-    return requests.get(url).json()
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    return response.json()
 
 
 def get_phpdt_data():
     return fetch_json(PHPDT_URL, args.api_response)
 
 phpdt_response = get_phpdt_data()
+
+unknown_routes = [key for key, data in phpdt_response.items() if data and key not in ROUTE_MAPPING]
+if unknown_routes:
+    raise ValueError(f"Unknown non-empty PHPDT routes: {', '.join(unknown_routes)}")
 
 """
 DATA VALIDATION
@@ -137,15 +137,17 @@ for route_key, route_info in ROUTE_MAPPING.items():
 if phpdt_rows:
     DATE = phpdt_rows[0]['Date'] # current date
     
-    if DATE != last_phpdt_date: # if not already at latest date
-        phpdt_df_new = pd.DataFrame(phpdt_rows)
-        
-        if last_phpdt_date is None: # no first entry / no file
-            phpdt_df_new.to_csv(DAILY_FILENAME, index=False, header=True)
-            print(f"Created {DAILY_FILENAME} with {len(phpdt_rows)} entries for {DATE}")
-        else:  # else append
-            phpdt_df_new.to_csv(DAILY_FILENAME, index=False, mode='a', header=False)
-            print(f"Appended {len(phpdt_rows)} PHPDT entries for {DATE}")
+    phpdt_df_new = pd.DataFrame(phpdt_rows)
+    keys = ['Date', 'Line', 'Direction', 'Start Station', 'End Station']
+    if phpdt_df_new.duplicated(keys).any():
+        raise ValueError("PHPDT response contains duplicate corridors for the same day and direction")
+    if not phpdt_df.empty:
+        # A route can become available after the other routes for the same day.
+        known = pd.MultiIndex.from_frame(phpdt_df[keys])
+        phpdt_df_new = phpdt_df_new.loc[~pd.MultiIndex.from_frame(phpdt_df_new[keys]).isin(known)]
+    if not phpdt_df_new.empty:
+        append_csv(DAILY_FILENAME, phpdt_df, phpdt_df_new)
+        print(f"Saved {len(phpdt_df_new)} new PHPDT entries for {DATE}")
     else:
         print(f"PHPDT data for {DATE} already exists. Skipping.")
 else:

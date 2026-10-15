@@ -40,7 +40,7 @@ def test_api_response_to_csv_matches_expected(script, tmp_path, http_mock, run_c
     assert {path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*.csv")} == set(FILES[script])
     for filename in FILES[script]:
         assert_frame_equal(canonical(read_csv(tmp_path / filename)),
-                           canonical(read_csv(FIXTURES / "expected" / filename)))
+                           canonical(expected_csv(filename)))
 
 
 @pytest.mark.parametrize("script", FILES)
@@ -57,18 +57,23 @@ def test_identical_replay_preserves_values_and_row_count(script, tmp_path, http_
 def test_incoming_date_with_existing_csv(script, position, tmp_path, http_mock, run_collector):
     before = {}
     for filename in FILES[script]:
-        incoming = read_csv(FIXTURES / "expected" / filename)
+        incoming = expected_csv(filename)
         seed = read_csv(FIXTURES / "seed" / filename)
         if position == "same_latest":
             seed = pd.concat([seed[seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
         elif position == "after_latest":
             seed = seed[seed["Date"] == "2000-01-01"].reset_index(drop=True)
         seed.to_csv(tmp_path / filename, index=False)
-        before[filename] = seed
+        expected_seed = expected_csv(filename, seed=True)
+        if position == "same_latest":
+            expected_seed = pd.concat([expected_seed[expected_seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
+        elif position == "after_latest":
+            expected_seed = expected_seed[expected_seed["Date"] == "2000-01-01"].reset_index(drop=True)
+        before[filename] = expected_seed
 
     run_collector(script)
     for filename, seed in before.items():
-        incoming = read_csv(FIXTURES / "expected" / filename)
+        incoming = expected_csv(filename)
         expected = seed if position == "same_latest" else pd.concat([seed, incoming], ignore_index=True)
         assert_frame_equal(canonical(read_csv(tmp_path / filename)), canonical(expected))
 
@@ -80,7 +85,7 @@ def test_empty_existing_csv_is_populated(script, tmp_path, http_mock, run_collec
     run_collector(script)
     for filename in FILES[script]:
         assert_frame_equal(canonical(read_csv(tmp_path / filename)),
-                           canonical(read_csv(FIXTURES / "expected" / filename)))
+                           canonical(expected_csv(filename)))
 
 
 def test_parking_can_use_dataset_date_from_workflow(tmp_path, http_mock, run_collector, monkeypatch):
@@ -89,7 +94,7 @@ def test_parking_can_use_dataset_date_from_workflow(tmp_path, http_mock, run_col
     assert len(http_mock.calls) == 3
     for filename in FILES["parking"]:
         assert_frame_equal(canonical(read_csv(tmp_path / filename)),
-                           canonical(read_csv(FIXTURES / "expected" / filename)))
+                           canonical(expected_csv(filename)))
 
 
 @pytest.mark.parametrize("script", FILES)
@@ -101,7 +106,7 @@ def test_cli_file_input_matches_expected_csvs(script, tmp_path, http_mock, run_c
     assert {path.relative_to(output_dir).as_posix() for path in output_dir.rglob("*.csv")} == set(FILES[script])
     for filename in FILES[script]:
         assert_frame_equal(canonical(read_csv(output_dir / filename)),
-                           canonical(read_csv(FIXTURES / "expected" / filename)))
+                           canonical(expected_csv(filename)))
         assert not (tmp_path / filename).exists()
 
 
@@ -111,7 +116,7 @@ def test_cli_file_input_with_existing_csv(script, position, tmp_path, http_mock,
     output_dir = tmp_path / "output"
     before = {}
     for filename in FILES[script]:
-        incoming = read_csv(FIXTURES / "expected" / filename)
+        incoming = expected_csv(filename)
         seed = read_csv(FIXTURES / "seed" / filename)
         if position == "same_latest":
             seed = pd.concat([seed[seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
@@ -120,13 +125,18 @@ def test_cli_file_input_with_existing_csv(script, position, tmp_path, http_mock,
         output = output_dir / filename
         output.parent.mkdir(parents=True, exist_ok=True)
         seed.to_csv(output, index=False)
-        before[filename] = seed
+        expected_seed = expected_csv(filename, seed=True)
+        if position == "same_latest":
+            expected_seed = pd.concat([expected_seed[expected_seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
+        elif position == "after_latest":
+            expected_seed = expected_seed[expected_seed["Date"] == "2000-01-01"].reset_index(drop=True)
+        before[filename] = expected_seed
 
     for _ in range(2):
         run_collector(script, "--api-response", FIXTURES / "api/day1.json",
                       "--output-dir", output_dir)
         for filename, seed in before.items():
-            incoming = read_csv(FIXTURES / "expected" / filename)
+            incoming = expected_csv(filename)
             expected = seed if position == "same_latest" else pd.concat([seed, incoming], ignore_index=True)
             assert_frame_equal(canonical(read_csv(output_dir / filename)), canonical(expected))
     assert len(http_mock.calls) == 0
@@ -145,4 +155,12 @@ def test_parking_cli_file_input_with_workflow_date(tmp_path, http_mock, run_coll
     assert len(http_mock.calls) == 0
     for filename in FILES["parking"]:
         assert_frame_equal(canonical(read_csv(output_dir / filename)),
-                           canonical(read_csv(FIXTURES / "expected" / filename)))
+                           canonical(expected_csv(filename)))
+def expected_csv(filename, seed=False):
+    if filename == FILES["parking"][2]:
+        folder = FIXTURES / "canonical"
+        if seed:
+            folder /= "seed"
+    else:
+        folder = FIXTURES / ("seed" if seed else "expected")
+    return read_csv(folder / filename)

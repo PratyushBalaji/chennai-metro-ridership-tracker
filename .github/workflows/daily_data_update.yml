@@ -42,7 +42,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Ridership/
-          git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - ridership"
+          git diff --cached --quiet || git commit -m "chore(data): update ridership $DATASET_DATE"
 
       - name: Run parking data collection
         run: python parking.py
@@ -52,7 +52,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Parking/
-          git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - parking"
+          git diff --cached --quiet || git commit -m "chore(data): update parking $DATASET_DATE"
       
       - name: Pull latest changes and push
         run: |
