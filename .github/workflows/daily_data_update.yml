@@ -2,59 +2,82 @@ name: Daily Data Update
 
 on:
   schedule:
-    - cron: '15 20 * * *' # 20:15 UTC (1:45am IST)
+    - cron: "0 4 * * *"    # 09:30 IST, today live
+    - cron: "0 8 * * *"    # 13:30 IST, today live
+    - cron: "0 13 * * *"   # 18:30 IST, today live
+    - cron: "45 17 * * *"  # 23:15 IST, today live
+    - cron: "45 20 * * *"  # 02:15 IST, yesterday final
   workflow_dispatch:
+    inputs:
+      day:
+        description: "CMRL day selector"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "0"
+          - "1"
 
 permissions:
   contents: write
 
+concurrency:
+  group: data-update-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   update-data:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set branch and day
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DAY: ${{ inputs.day }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          echo "BRANCH_NAME=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DAY_SELECTOR="$INPUT_DAY"
+          elif [ "$SCHEDULE" = "45 20 * * *" ]; then
+            DAY_SELECTOR="1"
+          else
+            DAY_SELECTOR="0"
+          fi
+          echo "DAY_SELECTOR=$DAY_SELECTOR" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v4
         with:
-          python-version: '3.13'
-      
-      - name: Install dependencies
+          python-version: "3.13"
+      - name: Install reqs
+        run: pip install -r requirements.txt
+      - name: Run ridership
+        id: ridership
         run: |
-          python -m pip install --upgrade pip
-          pip install requests pandas
-      
-      - name: Run ridership data collection
-        run: python ridership.py
-      
-      - name: Read dataset date from hourly CSV
-        shell: bash
+          set +e
+          python ridership.py --day "$DAY_SELECTOR"
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+      - name: Run parking
+        if: env.DAY_SELECTOR == '1' && steps.ridership.outputs.exit_code == '0'
         run: |
-          API_DATE=$(tail -n 1 Ridership/ChennaiMetro_Hourly_Ridership.csv | awk -F',' '{print $1}')
-          echo "DATASET_DATE=$API_DATE" >> "$GITHUB_ENV"
-      
-      - name: Commit ridership changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Ridership/
-          git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - ridership"
-
-      - name: Run parking data collection
-        run: python parking.py
-      
-      - name: Commit parking changes
+          DATASET_DATE=$(tail -n 1 Ridership/ChennaiMetro_Hourly_Ridership.csv | cut -d',' -f1)
+          export DATASET_DATE
+          python parking.py
+      - name: Commit and push data
+        if: steps.ridership.outputs.exit_code == '0' || steps.ridership.outputs.exit_code == '2'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Parking/
-          git diff --cached --quiet || git commit -m "daily append $DATASET_DATE - parking"
-      
-      - name: Pull latest changes and push
-        run: |
-          git pull --rebase origin main
-          git push
+          git add Ridership/ Parking/
+          if [ -d Discrepancies ]; then git add Discrepancies/; fi
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "chore(data): update daily data"
+          git pull --rebase origin "$BRANCH_NAME"
+          git push origin HEAD:"$BRANCH_NAME"
+      - name: Report collection result
+        env:
+          EXIT_CODE: ${{ steps.ridership.outputs.exit_code }}
+        run: exit "$EXIT_CODE"
