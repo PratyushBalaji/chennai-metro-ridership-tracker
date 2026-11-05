@@ -67,9 +67,8 @@ Each CSV file contains these generic columns, with some particulars depending on
 - Hourly : Hour (HH:MM format)
 - Station-wise : Line (01|02|04), Station (station code)
 
-Line 04 currently uses PBYM for Poonamallee Bypass and temporary five-letter codes for
-stations whose published codes are not yet available. Vadapalani stays SVA on both
-lines 02 and 04. When replacing a temporary code, update historical rows too.
+Line 04 uses the CMRL PHPDT codes POB, POO, MUL, KAC, KUC, KPM, IYP, THL,
+PBP, PRJ, and SVA in route order. Vadapalani stays SVA on both lines 02 and 04.
 
 UTP is stored as `noOfUTPQR` in daily ridership and `UTP QR` in hourly/station data.
 Older UTP values are backfilled with zero; this is a backfill assumption, not a
@@ -79,7 +78,8 @@ Parking station CSVs use `Eight Wheeler` only; the old `Eight Wheleer` header is
 coalesced into it, with conflicting populated values rejected.
 
 PHPDT includes line 04 when its route arrays have data. Poonamallee to Vadapalani is
-labelled UP, the reverse DOWN, and the API alias POB is stored as PBYM. Empty arrays
+labelled UP, the reverse DOWN. API suffixes such as SVA4, SCC-C2 and SAL-C2
+normalize to SVA, SCC and SAL; POB remains POB. Empty arrays
 produce a warning, not invented zero-count corridors.
 
 ### Potential Alternatives

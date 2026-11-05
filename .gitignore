@@ -4,3 +4,4 @@ __pycache__*
 .coverage
 coverage.xml
 test-results.xml
+.station-code-backups/

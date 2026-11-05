@@ -30,16 +30,17 @@ ROUTE_MAPPING = {
     "smMtoSCCViewModel": {"line": "2", "direction": "UP", "from": "SMM", "to": "SCC"},
     "scCtoSMMViewModel": {"line": "2", "direction": "DOWN", "from": "SCC", "to": "SMM"},
     # Line 4 (Yellow Line)
-    "poBtoSVAViewModel": {"line": "04", "direction": "UP", "from": "PBYM", "to": "SVA"},
-    "svAtoPOBViewModel": {"line": "04", "direction": "DOWN", "from": "SVA", "to": "PBYM"},
+    "poBtoSVAViewModel": {"line": "04", "direction": "UP", "from": "POB", "to": "SVA"},
+    "svAtoPOBViewModel": {"line": "04", "direction": "DOWN", "from": "SVA", "to": "POB"},
 }
 
 def extract_station_code(corridor):
     """Extract station codes from route key like 'seG_SCC2' -> ('SEG', 'SCC')"""
+    corridor = "_".join(part.split("-")[0] for part in corridor.split("_"))
     corridor = "".join([i for i in corridor if i.isalpha() or i == '_']) # remove non-alpha chars
     parts = corridor.split("_")
     if len(parts) == 2:
-        return tuple("PBYM" if part.upper() == "POB" else part.upper() for part in parts)
+        return tuple(part.upper() for part in parts)
     
     return None, None
 

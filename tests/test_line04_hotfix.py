@@ -63,9 +63,9 @@ def test_new_responses_preserve_old_columns_and_replay(script, day, date, tmp_pa
     station = read_csv(output / FILES[script][2])
     station = station.loc[station["Date"] == date]
     assert station.groupby("Line").size().to_dict() == ({"01": 26, "02": 17, "04": 11} if script == "ridership" else {"01": 24, "02": 15, "04": 7})
-    expected = {"PBYM", "PNMGH", "KRYCH", "KTTPK", "IYPTH", "THLYR", "PRJNC"}
+    expected = {"POB", "MUL", "KAC", "KPM", "IYP", "THL", "PRJ"}
     if script == "ridership":
-        expected |= {"PNMBS", "KMNCH", "PRBYP", "SVA"}
+        expected |= {"POO", "KUC", "PBP", "SVA"}
         assert set(station.loc[station["Station"] == "SVA", "Line"]) == {"02", "04"}
         daily = read_csv(output / FILES[script][0]).iloc[-1]
         assert daily["noOfUberQR"] == ("7502" if day == "0" else "17143")
@@ -128,8 +128,8 @@ def test_phpdt_empty_yellow_routes_then_same_day_completion(tmp_path, run_collec
     assert_frame_equal(actual.iloc[:82].reset_index(drop=True), old)
     yellow = actual.loc[actual["Line"] == "04"]
     assert yellow[["Direction", "Start Station", "End Station", "PHPDT"]].to_dict("records") == [
-        {"Direction": "UP", "Start Station": "PBYM", "End Station": "SVA", "PHPDT": "100"},
-        {"Direction": "DOWN", "Start Station": "SVA", "End Station": "PBYM", "PHPDT": "100"},
+        {"Direction": "UP", "Start Station": "POB", "End Station": "SVA", "PHPDT": "100"},
+        {"Direction": "DOWN", "Start Station": "SVA", "End Station": "POB", "PHPDT": "100"},
     ]
     first = filename.read_bytes()
     run_collector("phpdt", "--api-response", path, "--output-dir", output)
@@ -218,3 +218,51 @@ def test_root_cli_without_inherited_pythonpath(script, tmp_path):
                             cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     assert len(list((tmp_path / "output").rglob("*.csv"))) == len(FILES[script])
+
+
+def test_november_phpdt_exact_values_suffixes_and_repeat(tmp_path, run_collector, http_mock):
+    fixture = FIXTURES / "api/phpdt_2026-11-04.json"
+    stations = "POB POO MUL KAC KUC KPM IYP THL PBP PRJ SVA".split()
+    bundle = json.loads(fixture.read_text())
+    payload = next(iter(bundle["responses"].values()))
+    payload["poBtoSVAViewModel"] = []
+    payload["svAtoPOBViewModel"] = []
+    empty = response_file(tmp_path, bundle)
+    run_collector("phpdt", "--api-response", empty)
+    filename = tmp_path / "PHPDT/ChennaiMetro_Daily_PHPDT.csv"
+    original = read_csv(filename)
+    assert len(original) == 82
+    run_collector("phpdt", "--api-response", fixture)
+    path = tmp_path / "PHPDT/ChennaiMetro_Daily_PHPDT.csv"
+    first = path.read_bytes()
+    frame = read_csv(path)
+    assert len(frame) == 102
+    assert_frame_equal(frame.iloc[:82].reset_index(drop=True), original)
+    yellow = frame.loc[frame["Line"] == "04"]
+    for direction, stations, counts, start, end in [
+        ("UP", stations, [387,589,700,845,990,1081,1218,1210,1209,1320], "09:00", "10:00"),
+        ("DOWN", stations[::-1], [1733,1535,1546,1535,1344,1211,1020,634,445,306], "19:00", "20:00"),
+    ]:
+        rows = yellow.loc[yellow["Direction"] == direction]
+        assert list(zip(rows["Start Station"], rows["End Station"])) == list(zip(stations, stations[1:]))
+        assert rows["PHPDT"].tolist() == list(map(str, counts))
+        assert set(rows["Date"]) == {"2026-11-04"}
+        assert set(rows["Start Hour"]) == {start} and set(rows["End Hour"]) == {end}
+    run_collector("phpdt", "--api-response", FIXTURES / "api/phpdt_2026-11-04.json")
+    assert path.read_bytes() == first
+    assert not http_mock.calls
+
+
+
+def test_phpdt_hyphenated_suffixes_keep_shared_station_codes(tmp_path, run_collector):
+    bundle = json.loads((FIXTURES / "api/phpdt_2026-11-04.json").read_text())
+    payload = next(iter(bundle["responses"].values()))
+    down = payload["scCtoSMMViewModel"][0]
+    down["SCC-C2_SEG"] = down.pop("scC2_SEG")
+    down["SAL-C2_SMM"] = down.pop("saL2_SMM")
+    run_collector("phpdt", "--api-response", response_file(tmp_path, bundle))
+    frame = read_csv(tmp_path / "PHPDT/ChennaiMetro_Daily_PHPDT.csv")
+    green = frame.loc[(frame["Line"] == "2") & (frame["Direction"] == "DOWN")]
+    assert green.loc[green["Start Station"] == "SCC", "End Station"].tolist() == ["SEG"]
+    assert green.loc[green["Start Station"] == "SAL", "End Station"].tolist() == ["SMM"]
+    assert not {"SCCC", "SALC", "SVA4"} & (set(frame["Start Station"]) | set(frame["End Station"]))

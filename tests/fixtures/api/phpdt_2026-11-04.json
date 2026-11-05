@@ -1,0 +1,154 @@
+{
+  "responses": {
+    "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/PHPDTreport/": {
+      "saPtoSWDViewModel": [
+        {
+          "transfromdate": "2026-11-04T19:00:00",
+          "transtodate": "2026-11-04T20:00:00",
+          "sap": 0,
+          "saP_SME": 588,
+          "smE_SOT": 845,
+          "soT_SAL1": 914,
+          "saL1_SGU": 1918,
+          "sgU_SLM": 3031,
+          "slM_SSA": 3608,
+          "ssA_SCR": 3779,
+          "scR_STE": 5767,
+          "stE_SGM": 6050,
+          "sgM_STL": 6137,
+          "stL_SLI": 7237,
+          "slI_SGE": 7415,
+          "sgE_SCC1": 7108,
+          "scC1_SHC": 7890,
+          "shC_SMA": 8231,
+          "smA_SWA": 8129,
+          "swA_STC": 7093,
+          "stC_STR": 6225,
+          "stR_SNW": 5332,
+          "snW_STG": 4628,
+          "stG_SKP": 4198,
+          "skP_STT": 3405,
+          "stT_STV": 2430,
+          "stV_SWN": 1749,
+          "swN_SWD": 806
+        }
+      ],
+      "swDtoSAPViewModel": [
+        {
+          "transfromdate": "2026-11-04T09:00:00",
+          "transtodate": "2026-11-04T10:00:00",
+          "swd": 0,
+          "swD_SWN": 1540,
+          "swN_STV": 2440,
+          "stV_STT": 3232,
+          "stT_SKP": 4228,
+          "skP_STG": 5194,
+          "stG_SNW": 5639,
+          "snW_STR": 6366,
+          "stR_STC": 7443,
+          "stC_SWA": 8223,
+          "swA_SMA": 9660,
+          "smA_SHC": 9874,
+          "shC_SCC1": 9262,
+          "scC1_SGE": 14398,
+          "sgE_SLI": 14048,
+          "slI_STL": 12598,
+          "stL_SGM": 9532,
+          "sgM_STE": 8698,
+          "stE_SCR": 7053,
+          "scR_SSA": 6718,
+          "ssA_SLM": 6287,
+          "slM_SGU": 5109,
+          "sgU_SAL1": 3880,
+          "saL1_SOT": 3820,
+          "soT_SME": 1538,
+          "smE_SAP": 1173
+        }
+      ],
+      "smMtoSCCViewModel": [
+        {
+          "transfromdate": "2026-11-04T19:00:00",
+          "transtodate": "2026-11-04T20:00:00",
+          "smm": 0,
+          "smM_SAL2": 719,
+          "saL2_SSI": 3552,
+          "ssI_SAN": 4469,
+          "saN_SVA": 4219,
+          "svA_SAR": 3810,
+          "saR_SCM": 3633,
+          "scM_SKO": 3282,
+          "skO_STI": 3174,
+          "stI_SAT": 2832,
+          "saT_SAE": 2905,
+          "saE_SSN": 2829,
+          "ssN_SPC": 2843,
+          "spC_SKM": 3071,
+          "skM_SNP": 3216,
+          "snP_SEG": 3277,
+          "seG_SCC2": 3024
+        }
+      ],
+      "scCtoSMMViewModel": [
+        {
+          "transfromdate": "2026-11-04T09:00:00",
+          "transtodate": "2026-11-04T10:00:00",
+          "scc": 0,
+          "scC2_SEG": 2889,
+          "seG_SNP": 2931,
+          "snP_SKM": 2879,
+          "skM_SPC": 2640,
+          "spC_SSN": 2615,
+          "ssN_SAE": 2436,
+          "saE_SAT": 2353,
+          "saT_STI": 2229,
+          "stI_SKO": 2686,
+          "skO_SCM": 3231,
+          "scM_SAR": 3515,
+          "saR_SVA": 3786,
+          "svA_SAN": 3786,
+          "saN_SSI": 4082,
+          "ssI_SAL2": 3155,
+          "saL2_SMM": 2566
+        }
+      ],
+      "poBtoSVAViewModel": [
+        {
+          "transfromdate": "2026-11-04T09:00:00",
+          "transtodate": "2026-11-04T10:00:00",
+          "poB_POO": 387,
+          "poO_MUL": 589,
+          "muL_KAC": 700,
+          "kaC_KUC": 845,
+          "kuC_KPM": 990,
+          "kpM_IYP": 1081,
+          "iyP_THL": 1218,
+          "thL_PBP": 1210,
+          "pbP_PRJ": 1209,
+          "prJ_SVA4": 1320
+        }
+      ],
+      "svAtoPOBViewModel": [
+        {
+          "transfromdate": "2026-11-04T19:00:00",
+          "transtodate": "2026-11-04T20:00:00",
+          "svA4_PRJ": 1733,
+          "prJ_PBP": 1535,
+          "pbP_THL": 1546,
+          "thL_IYP": 1535,
+          "iyP_KPM": 1344,
+          "kpM_KUC": 1211,
+          "kuC_KAC": 1020,
+          "kaC_MUL": 634,
+          "muL_POO": 445,
+          "poO_POB": 306
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "captured_on": "2026-11-05",
+    "source": "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/PHPDTreport/",
+    "yellow": "Transcribed from user-supplied November 4 JSON screenshot and cross-checked field-for-field against the live response.",
+    "blue_green": "Captured live on November 5; response timestamps are November 4. Raw keys retained, including seG_SNP, snP_SKM, scM_SAR."
+  }
+}

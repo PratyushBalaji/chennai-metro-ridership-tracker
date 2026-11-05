@@ -75,14 +75,14 @@ PARKING_STATION_CODES = {
     "Arignar Anna Alandur ": "SAL",
     "St. Thomas Mount": "SMM",
 
-    # Yellow Line; match ridership's temporary codes.
-    "Poonamallee Bypass Metro": "PBYM",
-    "Poonamallee Government Hospital Metro": "PNMGH",
-    "Karayanchavadi Metro": "KRYCH",
-    "Kattupakkam Metro": "KTTPK",
-    "Iyyapanthangal Metro": "IYPTH",
-    "Thelliyaragaram Metro": "THLYR",
-    "Porur Junction Metro": "PRJNC",
+    # Yellow Line; match the PHPDT station codes used by ridership.
+    "Poonamallee Bypass Metro": "POB",
+    "Poonamallee Government Hospital Metro": "MUL",
+    "Karayanchavadi Metro": "KAC",
+    "Kattupakkam Metro": "KPM",
+    "Iyyapanthangal Metro": "IYP",
+    "Thelliyaragaram Metro": "THL",
+    "Porur Junction Metro": "PRJ",
 }
 
 def convert_parking_station_code(station_name):
