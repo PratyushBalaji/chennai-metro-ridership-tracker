@@ -26,12 +26,18 @@ def http_mock(api_bundle):
 
 @pytest.fixture
 def run_collector(monkeypatch, tmp_path):
-    for folder in ("Ridership", "Parking", "PHPDT"):
+    for folder in ("ridership", "parking", "phpdt"):
         (tmp_path / folder).mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DATASET_DATE", raising=False)
 
     def run(name, *args):
-        monkeypatch.setattr(sys, "argv", [f"{name}.py", *map(str, args)])
-        runpy.run_path(str(ROOT / f"{name}.py"), run_name="__main__")
+        if "--output-dir" not in args:
+            args = (*args, "--output-dir", tmp_path)
+        monkeypatch.setattr(sys, "argv", [f"collector.{name}", *map(str, args)])
+        runpy.run_module(f"collector.{name}", run_name="__main__")
     return run
+
+
+def pytest_configure(config):
+    (config.rootpath / ".cache").mkdir(exist_ok=True)

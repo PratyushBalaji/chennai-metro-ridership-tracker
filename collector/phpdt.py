@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 import os
 
-from collector import append_csv, read_csv
+from collector.csv import append_csv, read_csv
 
 """
 SETUP
@@ -12,10 +12,10 @@ SETUP
 
 parser = argparse.ArgumentParser(description="Collect Chennai Metro PHPDT data.")
 parser.add_argument("--api-response", help="Read a JSON response bundle instead of calling the API")
-parser.add_argument("--output-dir", default=".", help="Directory containing the PHPDT output folder")
+parser.add_argument("--output-dir", default="data", help="Data root containing the phpdt output folder")
 args = parser.parse_args()
 
-DAILY_FILENAME = os.path.join(args.output_dir, "PHPDT/ChennaiMetro_Daily_PHPDT.csv")
+DAILY_FILENAME = os.path.join(args.output_dir, "phpdt/ChennaiMetro_Daily_PHPDT.csv")
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
 

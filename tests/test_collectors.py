@@ -8,16 +8,16 @@ import pytest
 FIXTURES = Path(__file__).parent / "fixtures"
 FILES = {
     "ridership": (
-        "Ridership/ChennaiMetro_Daily_Ridership.csv",
-        "Ridership/ChennaiMetro_Hourly_Ridership.csv",
-        "Ridership/ChennaiMetro_Station_Ridership.csv",
+        "ridership/ChennaiMetro_Daily_Ridership.csv",
+        "ridership/ChennaiMetro_Hourly_Ridership.csv",
+        "ridership/ChennaiMetro_Station_Ridership.csv",
     ),
     "parking": (
-        "Parking/ChennaiMetro_Daily_Parking.csv",
-        "Parking/ChennaiMetro_Hourly_Parking.csv",
-        "Parking/ChennaiMetro_Station_Parking.csv",
+        "parking/ChennaiMetro_Daily_Parking.csv",
+        "parking/ChennaiMetro_Hourly_Parking.csv",
+        "parking/ChennaiMetro_Station_Parking.csv",
     ),
-    "phpdt": ("PHPDT/ChennaiMetro_Daily_PHPDT.csv",),
+    "phpdt": ("phpdt/ChennaiMetro_Daily_PHPDT.csv",),
 }
 
 
@@ -58,7 +58,7 @@ def test_incoming_date_with_existing_csv(script, position, tmp_path, http_mock, 
     before = {}
     for filename in FILES[script]:
         incoming = expected_csv(filename)
-        seed = read_csv(FIXTURES / "seed" / filename)
+        seed = read_csv(FIXTURES / "seed" / legacy_fixture_path(filename))
         if position == "same_latest":
             seed = pd.concat([seed[seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
         elif position == "after_latest":
@@ -163,4 +163,10 @@ def expected_csv(filename, seed=False):
             folder /= "seed"
     else:
         folder = FIXTURES / ("seed" if seed else "expected")
-    return read_csv(folder / filename)
+    return read_csv(folder / legacy_fixture_path(filename))
+
+
+def legacy_fixture_path(filename):
+    path = Path(filename)
+    folders = {"ridership": "Ridership", "parking": "Parking", "phpdt": "PHPDT"}
+    return Path(folders[path.parts[0]]) / path.name

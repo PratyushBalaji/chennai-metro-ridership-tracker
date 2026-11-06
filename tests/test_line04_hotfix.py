@@ -12,15 +12,15 @@ from pandas.testing import assert_frame_equal
 import pytest
 import requests
 
-from collector import append_csv, normalize_parking_columns, read_csv, write_csv_atomic
+from collector.csv import append_csv, normalize_parking_columns, read_csv, write_csv_atomic
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
 API = "https://commuters-dataapi.chennaimetrorail.org/api/"
 FILES = {
-    "ridership": [f"Ridership/ChennaiMetro_{kind}_Ridership.csv" for kind in ("Daily", "Hourly", "Station")],
-    "parking": [f"Parking/ChennaiMetro_{kind}_Parking.csv" for kind in ("Daily", "Hourly", "Station")],
-    "phpdt": ["PHPDT/ChennaiMetro_Daily_PHPDT.csv"],
+    "ridership": [f"ridership/ChennaiMetro_{kind}_Ridership.csv" for kind in ("Daily", "Hourly", "Station")],
+    "parking": [f"parking/ChennaiMetro_{kind}_Parking.csv" for kind in ("Daily", "Hourly", "Station")],
+    "phpdt": ["phpdt/ChennaiMetro_Daily_PHPDT.csv"],
 }
 
 
@@ -212,7 +212,7 @@ def test_http_errors_are_checked_before_json_or_csv_writes(script, tmp_path, run
 def test_root_cli_without_inherited_pythonpath(script, tmp_path):
     root = Path(__file__).resolve().parents[1]
     env = {key: value for key, value in os.environ.items() if not key.startswith("PYTHON") and key != "DATASET_DATE"}
-    result = subprocess.run([sys.executable, "-E", str(root / (script + ".py")),
+    result = subprocess.run([sys.executable, "-E", "-m", f"collector.{script}",
                              "--api-response", str(FIXTURES / "api/line04.json"),
                              "--output-dir", str(tmp_path / "output")],
                             cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
@@ -229,11 +229,11 @@ def test_november_phpdt_exact_values_suffixes_and_repeat(tmp_path, run_collector
     payload["svAtoPOBViewModel"] = []
     empty = response_file(tmp_path, bundle)
     run_collector("phpdt", "--api-response", empty)
-    filename = tmp_path / "PHPDT/ChennaiMetro_Daily_PHPDT.csv"
+    filename = tmp_path / "phpdt/ChennaiMetro_Daily_PHPDT.csv"
     original = read_csv(filename)
     assert len(original) == 82
     run_collector("phpdt", "--api-response", fixture)
-    path = tmp_path / "PHPDT/ChennaiMetro_Daily_PHPDT.csv"
+    path = tmp_path / "phpdt/ChennaiMetro_Daily_PHPDT.csv"
     first = path.read_bytes()
     frame = read_csv(path)
     assert len(frame) == 102
@@ -261,7 +261,7 @@ def test_phpdt_hyphenated_suffixes_keep_shared_station_codes(tmp_path, run_colle
     down["SCC-C2_SEG"] = down.pop("scC2_SEG")
     down["SAL-C2_SMM"] = down.pop("saL2_SMM")
     run_collector("phpdt", "--api-response", response_file(tmp_path, bundle))
-    frame = read_csv(tmp_path / "PHPDT/ChennaiMetro_Daily_PHPDT.csv")
+    frame = read_csv(tmp_path / "phpdt/ChennaiMetro_Daily_PHPDT.csv")
     green = frame.loc[(frame["Line"] == "2") & (frame["Direction"] == "DOWN")]
     assert green.loc[green["Start Station"] == "SCC", "End Station"].tolist() == ["SEG"]
     assert green.loc[green["Start Station"] == "SAL", "End Station"].tolist() == ["SMM"]

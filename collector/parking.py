@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 import os
 
-from collector import append_csv, read_csv, normalize_parking_columns, write_csv_atomic
+from collector.csv import append_csv, read_csv, normalize_parking_columns, write_csv_atomic
 
 """
 SETUP
@@ -12,12 +12,12 @@ SETUP
 
 parser = argparse.ArgumentParser(description="Collect Chennai Metro parking data.")
 parser.add_argument("--api-response", help="Read a JSON response bundle instead of calling the API")
-parser.add_argument("--output-dir", default=".", help="Directory containing the Parking output folder")
+parser.add_argument("--output-dir", default="data", help="Data root containing the parking output folder")
 args = parser.parse_args()
 
-DAILY_FILENAME = os.path.join(args.output_dir, "Parking/ChennaiMetro_Daily_Parking.csv")
-HOURLY_FILENAME = os.path.join(args.output_dir, "Parking/ChennaiMetro_Hourly_Parking.csv")
-STATION_FILENAME = os.path.join(args.output_dir, "Parking/ChennaiMetro_Station_Parking.csv")
+DAILY_FILENAME = os.path.join(args.output_dir, "parking/ChennaiMetro_Daily_Parking.csv")
+HOURLY_FILENAME = os.path.join(args.output_dir, "parking/ChennaiMetro_Hourly_Parking.csv")
+STATION_FILENAME = os.path.join(args.output_dir, "parking/ChennaiMetro_Station_Parking.csv")
 os.makedirs(os.path.dirname(DAILY_FILENAME), exist_ok=True)
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/parkingdashboard/"

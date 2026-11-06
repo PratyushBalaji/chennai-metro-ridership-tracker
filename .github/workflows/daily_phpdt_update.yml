@@ -25,8 +25,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests pandas
+          python -m pip install .
       
       - name: Setup repo and env
         run: |
@@ -35,16 +34,16 @@ jobs:
           git pull --rebase origin main
 
       - name: Run PHPDT data collection
-        run: python phpdt.py
+        run: python -m collector.phpdt
       
       - name: Read dataset date from CSV
         shell: bash
         run: |
-          API_DATE=$(tail -n 1 PHPDT/ChennaiMetro_Daily_PHPDT.csv | awk -F',' '{print $1}')
+          API_DATE=$(tail -n 1 data/phpdt/ChennaiMetro_Daily_PHPDT.csv | awk -F',' '{print $1}')
           echo "DATASET_DATE=$API_DATE" >> "$GITHUB_ENV"
       
       - name: Commit and Push PHPDT changes
         run: |
-          git add PHPDT/
+          git add data/phpdt/
           git diff --cached --quiet || git commit -m "chore(data): update phpdt $DATASET_DATE"
           git push

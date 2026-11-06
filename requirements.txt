@@ -1,7 +1,0 @@
-pandas
-matplotlib
-plotly
-requests
-seaborn
-nbformat
-folium

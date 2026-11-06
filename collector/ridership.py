@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 import os
 
-from collector import append_csv, read_csv
+from collector.csv import append_csv, read_csv
 
 """
 SETUP
@@ -12,12 +12,12 @@ SETUP
 
 parser = argparse.ArgumentParser(description="Collect Chennai Metro ridership data.")
 parser.add_argument("--api-response", help="Read a JSON response bundle instead of calling the API")
-parser.add_argument("--output-dir", default=".", help="Directory containing the Ridership output folder")
+parser.add_argument("--output-dir", default="data", help="Data root containing the ridership output folder")
 args = parser.parse_args()
 
-DAILY_FILENAME = os.path.join(args.output_dir, "Ridership/ChennaiMetro_Daily_Ridership.csv")
-HOURLY_FILENAME = os.path.join(args.output_dir, "Ridership/ChennaiMetro_Hourly_Ridership.csv")
-STATION_FILENAME = os.path.join(args.output_dir, "Ridership/ChennaiMetro_Station_Ridership.csv")
+DAILY_FILENAME = os.path.join(args.output_dir, "ridership/ChennaiMetro_Daily_Ridership.csv")
+HOURLY_FILENAME = os.path.join(args.output_dir, "ridership/ChennaiMetro_Hourly_Ridership.csv")
+STATION_FILENAME = os.path.join(args.output_dir, "ridership/ChennaiMetro_Station_Ridership.csv")
 os.makedirs(os.path.dirname(DAILY_FILENAME), exist_ok=True)
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
