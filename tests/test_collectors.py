@@ -117,7 +117,7 @@ def test_cli_file_input_with_existing_csv(script, position, tmp_path, http_mock,
     before = {}
     for filename in FILES[script]:
         incoming = expected_csv(filename)
-        seed = read_csv(FIXTURES / "seed" / filename)
+        seed = read_csv(FIXTURES / "seed" / legacy_fixture_path(filename))
         if position == "same_latest":
             seed = pd.concat([seed[seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
         elif position == "after_latest":
