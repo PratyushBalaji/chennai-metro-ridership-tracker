@@ -329,11 +329,14 @@ def test_workflows_share_branch_lock_and_collector_requirements():
         assert document["concurrency"] == {"group": "data-update-${{ github.ref }}", "cancel-in-progress": False}
         steps = next(iter(document["jobs"].values()))["steps"]
         assert next(step["run"] for step in steps if step.get("name") == "Install reqs") == "python -m pip install ."
+        assert steps[0]["with"]["ref"] == "${{ github.ref_name }}"
         commit = next(step for step in steps if step.get("name") == "Commit and push data")
         assert "== '0'" in commit["if"] and "== '2'" in commit["if"]
         if workflow == "daily_data_update.yml":
             assert "steps.parking.outputs.exit_code" in commit["if"]
             assert "steps.parking.outputs.exit_code" in steps[-1]["env"]["EXIT_CODE"]
+            parking = next(step["run"] for step in steps if step.get("name") == "Run parking")
+            assert "DATASET_DATE" not in parking
     import tomllib
     config = tomllib.loads((root / "pyproject.toml").read_text())
     assert set(config["project"]["dependencies"]) == {"pandas", "requests"}

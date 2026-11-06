@@ -277,7 +277,8 @@ def parse_args() -> argparse.Namespace:
 
 def retry_ridership(args: argparse.Namespace) -> int:
     log_path = _resolve_output_path(args.output_dir, args.anomaly_log)
-    previous = read_last_record(log_path)
+    # Other collectors and /1 reviews must not hide the latest live retry state.
+    previous = read_last_record(log_path, source="ridership", day="0")
     decision = retry_decision(previous)
     print(f"retry: {decision}")
     if decision in ("skip", "wait"):

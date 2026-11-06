@@ -112,22 +112,33 @@ def build_log_record(
 def append_jsonl(path: str | Path, record: dict[str, Any]) -> None:
     log_path = Path(path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(_json_value(record), ensure_ascii=True, sort_keys=True))
-        file.write("\n")
+    with log_path.open("a+b") as file:
+        if file.tell():
+            file.seek(-1, 2)
+            if file.read(1) != b"\n":
+                file.write(b"\n")
+        file.write((json.dumps(_json_value(record), ensure_ascii=True, sort_keys=True) + "\n").encode("utf-8"))
 
 
-def read_last_record(path: str | Path) -> dict[str, Any] | None:
-    line = read_last_line(path)
-    if not line:
-        return None
-    return json.loads(line)
+def read_last_record(path: str | Path, *, source: str | None = None, day: str | None = None) -> dict[str, Any] | None:
+    for line in _read_lines_reverse(path):
+        record = json.loads(line)
+        if source is not None and record.get("source") != source:
+            continue
+        if day is not None and str(record.get("day")) != day:
+            continue
+        return record
+    return None
 
 
 def read_last_line(path: str | Path, chunk_size: int = 4096) -> str | None:
+    return next(_read_lines_reverse(path, chunk_size), None)
+
+
+def _read_lines_reverse(path: str | Path, chunk_size: int = 4096):
     log_path = Path(path)
     if not log_path.exists() or log_path.stat().st_size == 0:
-        return None
+        return
 
     with log_path.open("rb") as file:
         file.seek(0, 2)
@@ -139,14 +150,13 @@ def read_last_line(path: str | Path, chunk_size: int = 4096) -> str | None:
             position -= read_size
             file.seek(position)
             buffer = file.read(read_size) + buffer
-            content = buffer.rstrip()
-            if not content:
-                continue
-            line_start = content.rfind(b"\n")
-            if line_start >= 0 or position == 0:
-                return content[line_start + 1:].strip().decode("utf-8")
-
-    return None
+            lines = buffer.split(b"\n")
+            buffer = lines[0]
+            for line in reversed(lines[1:]):
+                if line.strip():
+                    yield line.strip().decode("utf-8")
+        if buffer.strip():
+            yield buffer.strip().decode("utf-8")
 
 
 def _result_anomalies(results: Iterable[UpsertResult]) -> list[dict[str, Any]]:

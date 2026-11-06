@@ -30,7 +30,11 @@ Accordingly:
 
 ## General Information
 
-The [ridership.py](./collector/ridership.py), [parking.py](./collector/parking.py) and [phpdt.py](./collector/phpdt.py) files perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
+The [ridership.py](./collector/ridership.py), [parking.py](./collector/parking.py) and [phpdt.py](./collector/phpdt.py) files perform the data scraping, basic pre-processing, and CSV upserts. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
+
+Ridership and parking only update a row if all populated values stay equal or increase; blank values can be filled. Mixed/lower rows are kept unchanged and flagged. PHPDT only inserts missing corridors or fills blanks; changes to populated counts or hours need review.
+
+Anomalies are appended to `data/discrepancies/anomaly_log.jsonl` with UTC/IST timestamps. Exit code `0` means success, `2` means anomalies (other valid rows may still be saved), and `1` means a collection error. See [tests](./tests/README.md) for fixture testing and retry behaviour.
 
 The CSV files contain the actual historical [daily](./data/ridership/ChennaiMetro_Daily_Ridership.csv), [hourly](./data/ridership/ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./data/ridership/ChennaiMetro_Station_Ridership.csv) ridership, parking and PHPDT data. The collection was started on January 24th 2026.
 

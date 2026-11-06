@@ -25,6 +25,23 @@ def test_missing_anomaly_log_has_no_last_line(tmp_path):
     assert read_last_record(tmp_path / "missing.jsonl") is None
 
 
+@pytest.mark.parametrize("ending", (b"", b"\r", b"\n", b"\r\n"))
+def test_append_keeps_unterminated_final_record_separate(ending, tmp_path):
+    path = tmp_path / "anomaly_log.jsonl"
+    first, second = {"status": "pending_retry"}, {"status": "resolved"}
+    path.write_bytes(json.dumps(first).encode() + ending)
+    append_jsonl(path, second)
+    assert [json.loads(line) for line in path.read_text().splitlines()] == [first, second]
+
+
+def test_filtered_tail_stops_at_latest_terminal_record(tmp_path):
+    path = tmp_path / "anomaly_log.jsonl"
+    for status in ("pending_retry", "resolved"):
+        append_jsonl(path, {"source": "ridership", "day": "0", "status": status})
+    append_jsonl(path, {"source": "parking", "day": "1", "status": "needs_review"})
+    assert read_last_record(path, source="ridership", day="0")["status"] == "resolved"
+
+
 @pytest.mark.parametrize("status", ("resolved", "expired", "needs_review"))
 def test_retry_ignores_terminal_records(status):
     assert retry_decision({"status": status}) == "skip"

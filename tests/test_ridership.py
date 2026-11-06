@@ -141,6 +141,31 @@ def test_due_retry_dry_run_preserves_csvs_and_log(retry_files, tmp_path, run_col
     assert {path: path.read_bytes() for path in before} == before
 
 
+@pytest.mark.parametrize("source,day", (("parking", "1"), ("phpdt", "1"), ("ridership", "1")))
+def test_other_log_records_do_not_hide_live_retry(source, day, retry_files, tmp_path, run_collector):
+    output, cases, log, previous = retry_files
+    anomaly_helpers.append_jsonl(log, {"source": source, "day": day, "status": "needs_review"})
+    fixture = response_file(tmp_path, cases["all_higher"], "0")
+    with patch.object(anomaly_helpers, "datetime", wraps=datetime) as clock:
+        clock.now.return_value = datetime(2026, 6, 15, 12, tzinfo=timezone.utc)
+        run_collector("ridership", "--retry", "--api-response", fixture, "--output-dir", output)
+    record = anomaly_helpers.read_last_record(log)
+    assert record["status"] == "resolved"
+    assert record["date"] == previous["date"]
+    assert len(log.read_text().splitlines()) == 3
+
+
+def test_invalid_station_keys_do_not_partially_write_ridership(tmp_path):
+    _write_existing_ridership(tmp_path, total=100, card=50)
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*.csv")}
+    daily, hourly, station = _payloads(total=150, card=100)
+    station.append(copy.deepcopy(station[0]))
+    with patch.object(ridership, "fetch_ridership_payloads", return_value=(daily, hourly, station)):
+        with pytest.raises(ValueError, match="duplicate natural keys"):
+            ridership.collect_ridership(output_dir=tmp_path)
+    assert {path: path.read_bytes() for path in before} == before
+
+
 @pytest.mark.parametrize("status", ("pending_retry", "resolved", "expired", "needs_review"))
 def test_retry_skips_fetch_for_waiting_or_terminal_records(status, retry_files, tmp_path, run_collector):
     output, _, log, previous = retry_files

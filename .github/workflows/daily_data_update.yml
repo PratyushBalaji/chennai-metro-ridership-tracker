@@ -32,6 +32,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref_name }}
       - name: Set branch and day
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -64,8 +65,6 @@ jobs:
         id: parking
         if: env.DAY_SELECTOR == '1' && steps.ridership.outputs.exit_code == '0'
         run: |
-          DATASET_DATE=$(tail -n 1 data/ridership/ChennaiMetro_Hourly_Ridership.csv | cut -d',' -f1)
-          export DATASET_DATE
           set +e
           python -m collector.parking
           code=$?
