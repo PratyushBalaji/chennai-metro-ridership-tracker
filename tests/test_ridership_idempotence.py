@@ -13,9 +13,9 @@ pytestmark = pytest.mark.idempotence
 FIXTURES = Path(__file__).parent / "fixtures/idempotence"
 DATE = "2026-06-15"
 FILES = {
-    "daily": "Ridership/ChennaiMetro_Daily_Ridership.csv",
-    "hourly": "Ridership/ChennaiMetro_Hourly_Ridership.csv",
-    "station": "Ridership/ChennaiMetro_Station_Ridership.csv",
+    "daily": "ridership/ChennaiMetro_Daily_Ridership.csv",
+    "hourly": "ridership/ChennaiMetro_Hourly_Ridership.csv",
+    "station": "ridership/ChennaiMetro_Station_Ridership.csv",
 }
 KEYS = {"daily": ["Date"], "hourly": ["Date", "Hour"], "station": ["Date", "Line", "Station"]}
 CARDS = {"daily": "noOfNCMCcard", "hourly": "Singara Chennai Card", "station": "Singara Chennai Card"}
@@ -90,7 +90,7 @@ def test_cli_strict_upsert_preserves_unrelated_rows_and_replays(day, case, value
     expected = read_outputs(output)
     for name, frame in expected.items():
         frame.loc[target(frame, name), ["Total", CARDS[name], QR[name]]] = list(map(str, values))
-    log = output / "Discrepancies/anomaly_log.jsonl"
+    log = output / "discrepancies/anomaly_log.jsonl"
     prefix = b""
 
     for attempt in range(2):
@@ -138,7 +138,7 @@ def test_insert_before_between_or_after_existing_dates_is_idempotent(date, scena
     for _ in range(2):
         run("equal", day="0", date=date)
         assert_outputs(output, expected)
-    assert not (output / "Discrepancies/anomaly_log.jsonl").exists()
+    assert not (output / "discrepancies/anomaly_log.jsonl").exists()
 
 
 def test_blank_existing_values_can_be_backfilled(scenario):
@@ -151,7 +151,7 @@ def test_blank_existing_values_can_be_backfilled(scenario):
     for _ in range(2):
         run("equal")
         assert_outputs(output, expected)
-    assert not (output / "Discrepancies/anomaly_log.jsonl").exists()
+    assert not (output / "discrepancies/anomaly_log.jsonl").exists()
 
 
 def test_live_growth_final_replay_and_next_day_are_independent(scenario):
@@ -174,13 +174,13 @@ def test_live_growth_final_replay_and_next_day_are_independent(scenario):
     assert_outputs(output, expected)
     run("all_higher", day="1")
     assert_outputs(output, expected)
-    assert not (output / "Discrepancies/anomaly_log.jsonl").exists()
+    assert not (output / "discrepancies/anomaly_log.jsonl").exists()
 
 
 def test_successful_retry_preserves_the_anomaly_log(scenario):
     output, run = scenario
     run("mixed", day="0", exit_code=2)
-    log = output / "Discrepancies/anomaly_log.jsonl"
+    log = output / "discrepancies/anomaly_log.jsonl"
     original_log = log.read_bytes()
     expected = read_outputs(output)
     for name, frame in expected.items():
@@ -221,5 +221,5 @@ def test_bad_row_does_not_block_other_updates_or_new_keys(scenario, cases):
     for _ in range(2):
         run("mixed", day="0", exit_code=2, payload=payload)
         assert_outputs(output, expected)
-    records = (output / "Discrepancies/anomaly_log.jsonl").read_text(encoding="utf-8").splitlines()
+    records = (output / "discrepancies/anomaly_log.jsonl").read_text(encoding="utf-8").splitlines()
     assert all(len(json.loads(record)["anomalies"]) == 3 for record in records)

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chennai-metro-ridership-tracker"
+version = "0.1.0"
+description = "Collectors for Chennai Metro ridership, parking and PHPDT archives"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pandas", "requests"]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8,<10",
+    "responses>=0.25,<1",
+    "pytest-socket>=0.7,<1",
+    "pytest-cov>=6,<8",
+    "PyYAML>=6,<7",
+]
+notebook = ["matplotlib", "plotly", "seaborn", "nbformat", "folium"]
+
+[tool.setuptools]
+packages = ["collector"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+cache_dir = ".cache/pytest"
+addopts = "--disable-socket -ra --basetemp=.cache/pytest-tmp --junitxml=.cache/reports/junit.xml"
+markers = ["idempotence: strict upsert and replay behaviour"]
+
+[tool.coverage.run]
+branch = true
+source = ["collector"]
+data_file = ".cache/.coverage"
+
+[tool.coverage.xml]
+output = ".cache/reports/coverage.xml"

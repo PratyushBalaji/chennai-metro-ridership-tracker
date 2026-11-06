@@ -10,9 +10,9 @@ from collector.schemas import PARKING_DAILY, PARKING_HOURLY, PARKING_STATION
 from collector.upsert import read_csv, upsert_rows, write_csv_atomic
 
 
-DAILY_FILENAME = "Parking/ChennaiMetro_Daily_Parking.csv"
-HOURLY_FILENAME = "Parking/ChennaiMetro_Hourly_Parking.csv"
-STATION_FILENAME = "Parking/ChennaiMetro_Station_Parking.csv"
+DAILY_FILENAME = "parking/ChennaiMetro_Daily_Parking.csv"
+HOURLY_FILENAME = "parking/ChennaiMetro_Hourly_Parking.csv"
+STATION_FILENAME = "parking/ChennaiMetro_Station_Parking.csv"
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/parkingdashboard/"
 RIDERSHIP_HOURLY_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/hourlybaseddata/1"
 
@@ -60,6 +60,14 @@ PARKING_STATION_CODES = {
     "Ekkattuthangal": "SSI",
     "Arignar Anna Alandur ": "SAL",
     "St. Thomas Mount": "SMM",
+    # Yellow Line (corridor 4)
+    "Poonamallee Bypass Metro": "POB",
+    "Poonamallee Government Hospital Metro": "MUL",
+    "Karayanchavadi Metro": "KAC",
+    "Kattupakkam Metro": "KPM",
+    "Iyyapanthangal Metro": "IYP",
+    "Thelliyaragaram Metro": "THL",
+    "Porur Junction Metro": "PRJ",
 }
 
 
@@ -103,7 +111,7 @@ def normalize_station(payload, dataset_date):
     return pd.DataFrame(rows)
 
 
-def collect_parking(output_dir=".", api_response=None, anomaly_log=ANOMALY_LOG_PATH):
+def collect_parking(output_dir="data", api_response=None, anomaly_log=ANOMALY_LOG_PATH):
     daily = fetch_json(BASE_URL + "allTicketCount/1", api_response)
     hourly = fetch_json(BASE_URL + "hourlybaseddata/1", api_response)
     station = fetch_json(BASE_URL + "stationData/1", api_response)
@@ -135,7 +143,7 @@ def collect_parking(output_dir=".", api_response=None, anomaly_log=ANOMALY_LOG_P
 def main():
     parser = argparse.ArgumentParser(description="Collect Chennai Metro parking data.")
     parser.add_argument("--api-response", type=Path, help="Read a JSON response bundle instead of calling the API")
-    parser.add_argument("--output-dir", default=".", help="Directory containing the Parking output folder")
+    parser.add_argument("--output-dir", default="data", help="Data root containing the parking output folder")
     parser.add_argument("--anomaly-log", type=Path, default=ANOMALY_LOG_PATH)
     args = parser.parse_args()
     results = collect_parking(args.output_dir, args.api_response, args.anomaly_log)

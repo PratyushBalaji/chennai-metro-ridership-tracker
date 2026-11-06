@@ -21,16 +21,16 @@ from collector.anomalies import read_last_record
 FIXTURES = Path(__file__).parent / "fixtures"
 FILES = {
     "ridership": (
-        "Ridership/ChennaiMetro_Daily_Ridership.csv",
-        "Ridership/ChennaiMetro_Hourly_Ridership.csv",
-        "Ridership/ChennaiMetro_Station_Ridership.csv",
+        "ridership/ChennaiMetro_Daily_Ridership.csv",
+        "ridership/ChennaiMetro_Hourly_Ridership.csv",
+        "ridership/ChennaiMetro_Station_Ridership.csv",
     ),
     "parking": (
-        "Parking/ChennaiMetro_Daily_Parking.csv",
-        "Parking/ChennaiMetro_Hourly_Parking.csv",
-        "Parking/ChennaiMetro_Station_Parking.csv",
+        "parking/ChennaiMetro_Daily_Parking.csv",
+        "parking/ChennaiMetro_Hourly_Parking.csv",
+        "parking/ChennaiMetro_Station_Parking.csv",
     ),
-    "phpdt": ("PHPDT/ChennaiMetro_Daily_PHPDT.csv",),
+    "phpdt": ("phpdt/ChennaiMetro_Daily_PHPDT.csv",),
 }
 
 
@@ -54,7 +54,7 @@ def expected_csv(filename, seed=False):
             folder /= "seed"
     else:
         folder = FIXTURES / ("seed" if seed else "expected")
-    return read_csv(folder / filename)
+    return read_csv(folder / legacy_fixture_path(filename))
 
 
 @pytest.mark.parametrize("script", ["parking", "phpdt"])
@@ -68,8 +68,8 @@ def test_imports_do_not_collect_parse_args_or_write(script, monkeypatch, tmp_pat
     monkeypatch.setattr(os, "makedirs", forbidden)
     monkeypatch.setattr(Path, "mkdir", forbidden)
     monkeypatch.setattr(pd.DataFrame, "to_csv", forbidden)
-    monkeypatch.delitem(sys.modules, script, raising=False)
-    importlib.import_module(script)
+    monkeypatch.delitem(sys.modules, f"collector.{script}", raising=False)
+    importlib.import_module(f"collector.{script}")
     forbidden.assert_not_called()
     assert list(tmp_path.iterdir()) == []
 
@@ -118,7 +118,7 @@ def test_root_cli_without_pythonpath(script, tmp_path):
     root = Path(__file__).resolve().parents[1]
     env = {key: value for key, value in os.environ.items() if not key.startswith("PYTHON") and key != "DATASET_DATE"}
     output = tmp_path / "output"
-    result = subprocess.run([sys.executable, "-E", str(root / (script + ".py")),
+    result = subprocess.run([sys.executable, "-E", "-m", f"collector.{script}",
                              "--api-response", str(FIXTURES / "api/day1.json"),
                              "--output-dir", str(output)], cwd=tmp_path, env=env,
                             capture_output=True, text=True, timeout=30)
@@ -152,7 +152,7 @@ def test_a_b_a_replay_preserves_history(script, tmp_path, run_collector, api_bun
         assert_frame_equal(actual[actual["Date"] == "2026-10-11"].reset_index(drop=True), original_frame)
         if script == "parking" and "Line" in actual:
             assert set(actual["Line"]) == {"01", "02"}
-    assert not (output / "Discrepancies").exists()
+    assert not (output / "discrepancies").exists()
 
 
 @pytest.mark.parametrize("script", ["parking", "phpdt"])
@@ -202,7 +202,7 @@ def test_parking_strict_upsert_and_anomaly_log(change, tmp_path, run_collector, 
             run_collector("parking", "--api-response", response_file, "--output-dir", output)
         assert error.value.code == 2
         assert_frame_equal(read_csv(output / FILES["parking"][0]), before)
-        log = output / "Discrepancies/anomaly_log.jsonl"
+        log = output / "discrepancies/anomaly_log.jsonl"
         record = read_last_record(log)
         assert (record["source"], record["day"], record["status"], record["date"]) == ("parking", "1", "needs_review", "2026-10-11")
         previous = log.read_bytes()
@@ -256,7 +256,7 @@ def test_parking_alias_conflict_prevents_all_csv_writes(side, tmp_path, run_coll
         run_collector("parking", "--api-response", response_file, "--output-dir", output)
     for filename, before in snapshots.items():
         assert (output / filename).read_bytes() == before
-    assert not (output / "Discrepancies").exists()
+    assert not (output / "discrepancies").exists()
 
 
 @pytest.mark.parametrize("change", ["higher_count", "lower_count", "start_hour", "end_hour"])
@@ -279,7 +279,7 @@ def test_phpdt_corrections_are_logged_without_creating_records(change, tmp_path,
         run_collector("phpdt", "--api-response", response_file, "--output-dir", output)
     assert error.value.code == 2
     assert_frame_equal(read_csv(output / FILES["phpdt"][0]), before)
-    record = read_last_record(output / "Discrepancies/anomaly_log.jsonl")
+    record = read_last_record(output / "discrepancies/anomaly_log.jsonl")
     assert (record["source"], record["status"], record["date"]) == ("phpdt", "needs_review", "2026-10-11")
     assert "Start Hour" not in record["anomalies"][0]["key"]
     assert "End Hour" not in record["anomalies"][0]["key"]
@@ -293,7 +293,7 @@ def test_phpdt_cli_fills_blank_counts_and_hours(tmp_path, run_collector):
     frame.to_csv(output / FILES["phpdt"][0], index=False)
     run_collector("phpdt", "--api-response", FIXTURES / "api/day1.json", "--output-dir", output)
     assert_frame_equal(canonical(read_csv(output / FILES["phpdt"][0])), canonical(expected_csv(FILES["phpdt"][0])))
-    assert not (output / "Discrepancies").exists()
+    assert not (output / "discrepancies").exists()
 
 
 @pytest.mark.parametrize("workflow,step_name", [
@@ -310,8 +310,8 @@ def test_workflow_captures_python_exit_under_bash_e(workflow, step_name, exit_co
     document = yaml.safe_load((root / ".github/workflows" / workflow).read_text())
     steps = next(iter(document["jobs"].values()))["steps"]
     run = next(step["run"] for step in steps if step.get("name") == step_name)
-    csv_path = tmp_path / FILES["ridership"][1]
-    csv_path.parent.mkdir()
+    csv_path = tmp_path / "data" / FILES["ridership"][1]
+    csv_path.parent.mkdir(parents=True)
     csv_path.write_text("Date,Hour,Total\n2026-10-11,23:00,100\n")
     output = tmp_path / "github-output"
     env = {**os.environ, "GITHUB_OUTPUT": str(output), "DAY_SELECTOR": "1", "COLLECTION_EXIT": str(exit_code)}
@@ -328,15 +328,17 @@ def test_workflows_share_branch_lock_and_collector_requirements():
         document = yaml.safe_load((root / ".github/workflows" / workflow).read_text())
         assert document["concurrency"] == {"group": "data-update-${{ github.ref }}", "cancel-in-progress": False}
         steps = next(iter(document["jobs"].values()))["steps"]
-        assert next(step["run"] for step in steps if step.get("name") == "Install reqs") == "pip install -r requirements-collector.txt"
+        assert next(step["run"] for step in steps if step.get("name") == "Install reqs") == "python -m pip install ."
         commit = next(step for step in steps if step.get("name") == "Commit and push data")
         assert "== '0'" in commit["if"] and "== '2'" in commit["if"]
         if workflow == "daily_data_update.yml":
             assert "steps.parking.outputs.exit_code" in commit["if"]
             assert "steps.parking.outputs.exit_code" in steps[-1]["env"]["EXIT_CODE"]
-    full = (root / "requirements.txt").read_text().splitlines()
-    assert set(full) == {"-r requirements-collector.txt", "matplotlib", "plotly", "seaborn", "nbformat", "folium"}
-    assert (root / "requirements-test.txt").read_text().splitlines()[0] == "-r requirements-collector.txt"
+    import tomllib
+    config = tomllib.loads((root / "pyproject.toml").read_text())
+    assert set(config["project"]["dependencies"]) == {"pandas", "requests"}
+    assert set(config["project"]["optional-dependencies"]["notebook"]) == {"matplotlib", "plotly", "seaborn", "nbformat", "folium"}
+
 
 
 @pytest.mark.parametrize("script", FILES)
@@ -364,7 +366,7 @@ def test_incoming_date_with_existing_csv(script, position, tmp_path, http_mock, 
     before = {}
     for filename in FILES[script]:
         incoming = expected_csv(filename)
-        seed = read_csv(FIXTURES / "seed" / filename)
+        seed = read_csv(FIXTURES / "seed" / legacy_fixture_path(filename))
         if position == "same_latest":
             seed = pd.concat([seed[seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
         elif position == "after_latest":
@@ -423,7 +425,7 @@ def test_cli_file_input_with_existing_csv(script, position, tmp_path, http_mock,
     before = {}
     for filename in FILES[script]:
         incoming = expected_csv(filename)
-        seed = read_csv(FIXTURES / "seed" / filename)
+        seed = read_csv(FIXTURES / "seed" / legacy_fixture_path(filename))
         if position == "same_latest":
             seed = pd.concat([seed[seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
         elif position == "after_latest":
@@ -483,13 +485,13 @@ def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tm
     command("init", "-b", branch, cwd=first)
     command("config", "user.name", "test", cwd=first)
     command("config", "user.email", "test@example.com", cwd=first)
-    shutil.copytree(FIXTURES / "idempotence/seed/Ridership", first / "Ridership")
-    (first / "Parking").mkdir()
+    shutil.copytree(FIXTURES / "idempotence/seed/Ridership", first / "data/ridership")
+    (first / "data/parking").mkdir(parents=True)
     shutil.copyfile(FIXTURES / "expected/Parking/ChennaiMetro_Daily_Parking.csv",
-                    first / "Parking/ChennaiMetro_Daily_Parking.csv")
-    (first / "PHPDT").mkdir()
+                    first / "data/parking/ChennaiMetro_Daily_Parking.csv")
+    (first / "data/phpdt").mkdir(parents=True)
     phpdt_seed = expected_csv(FILES["phpdt"][0]).iloc[:-1]
-    phpdt_seed.to_csv(first / FILES["phpdt"][0], index=False)
+    phpdt_seed.to_csv(first / "data" / FILES["phpdt"][0], index=False)
     command("add", ".", cwd=first)
     command("commit", "-m", "test: seed csvs", cwd=first)
     command("remote", "add", "origin", origin, cwd=first)
@@ -514,7 +516,7 @@ def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tm
         response_file.write_text(json.dumps(bundle), encoding="utf-8")
         script, arguments = "phpdt", ()
     with pytest.raises(SystemExit) as error:
-        run_collector(script, *arguments, "--api-response", response_file, "--output-dir", runner)
+        run_collector(script, *arguments, "--api-response", response_file, "--output-dir", runner / "data")
     assert error.value.code == 2
 
     (first / "remote_change.txt").write_text("unrelated remote change\n")
@@ -533,16 +535,22 @@ def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tm
         assert result.returncode == 0, result.stderr
         assert command("status", "--porcelain", cwd=runner) == ""
     assert (runner / "remote_change.txt").read_text().strip() == "unrelated remote change"
-    log = command("--git-dir", origin, "show", branch + ":Discrepancies/anomaly_log.jsonl", cwd=tmp_path)
+    log = command("--git-dir", origin, "show", branch + ":data/discrepancies/anomaly_log.jsonl", cwd=tmp_path)
     assert json.loads(log)["status"] == ("needs_review" if script == "phpdt" else "pending_retry")
     if script == "phpdt":
-        assert_frame_equal(read_csv(runner / FILES["phpdt"][0]), canonical(expected_csv(FILES["phpdt"][0])))
-        pushed = command("--git-dir", origin, "show", branch + ":" + FILES["phpdt"][0], cwd=tmp_path)
-        assert pushed == (runner / FILES["phpdt"][0]).read_text().strip()
+        assert_frame_equal(read_csv(runner / "data" / FILES["phpdt"][0]), canonical(expected_csv(FILES["phpdt"][0])))
+        pushed = command("--git-dir", origin, "show", branch + ":data/" + FILES["phpdt"][0], cwd=tmp_path)
+        assert pushed == (runner / "data" / FILES["phpdt"][0]).read_text().strip()
     else:
-        hourly = command("--git-dir", origin, "show", branch + ":Ridership/ChennaiMetro_Hourly_Ridership.csv", cwd=tmp_path)
+        hourly = command("--git-dir", origin, "show", branch + ":data/ridership/ChennaiMetro_Hourly_Ridership.csv", cwd=tmp_path)
         assert "2026-06-15,12:00,40,15,25" in hourly
     report_step = steps[-1]
     reported = subprocess.run([bash, "-e", "-c", report_step["run"]], cwd=runner,
                               env={**env, "EXIT_CODE": "2"}, capture_output=True, text=True, timeout=30)
     assert reported.returncode == 2
+
+
+def legacy_fixture_path(filename):
+    path = Path(filename)
+    folders = {"ridership": "Ridership", "parking": "Parking", "phpdt": "PHPDT"}
+    return Path(folders[path.parts[0]]) / path.name

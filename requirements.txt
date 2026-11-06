@@ -1,6 +1,0 @@
--r requirements-collector.txt
-matplotlib
-plotly
-seaborn
-nbformat
-folium

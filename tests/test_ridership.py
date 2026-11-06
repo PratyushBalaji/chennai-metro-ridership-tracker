@@ -10,7 +10,7 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
 
-import ridership
+from collector import ridership
 import collector.anomalies as anomaly_helpers
 
 
@@ -20,14 +20,14 @@ FIXTURES = Path(__file__).parent / "fixtures"
 @pytest.fixture
 def retry_files(tmp_path):
     output = tmp_path / "output"
-    shutil.copytree(FIXTURES / "idempotence/seed", output)
+    shutil.copytree(FIXTURES / "idempotence/seed/Ridership", output / "ridership")
     cases = json.loads((FIXTURES / "idempotence/cases.json").read_text())["cases"]
     previous = {
         "source": "ridership", "day": "0", "date": "2026-06-15", "status": "pending_retry",
         "utc_timestamp": "2026-06-15T11:40:00Z", "ist_timestamp": "2026-06-15T17:10:00+05:30",
         "reason": "strict_upsert_anomaly", "anomalies": [], "payload_summary": {},
     }
-    log = output / "Discrepancies/anomaly_log.jsonl"
+    log = output / "discrepancies/anomaly_log.jsonl"
     anomaly_helpers.append_jsonl(log, previous)
     return output, cases, log, previous
 
@@ -46,7 +46,7 @@ def response_file(tmp_path, payload, day):
 @pytest.mark.parametrize("hourly", ({"categories": [], "series": []}, {}, None))
 def test_unavailable_hourly_data_logs_and_preserves_csvs(day, hourly, tmp_path, run_collector, http_mock):
     output = tmp_path / "output"
-    shutil.copytree(FIXTURES / "idempotence/seed", output)
+    shutil.copytree(FIXTURES / "idempotence/seed/Ridership", output / "ridership")
     before = {path: path.read_bytes() for path in output.rglob("*.csv")}
     payload = json.loads((FIXTURES / "idempotence/cases.json").read_text())["cases"]["empty_hourly"]
     payload["hourly"] = hourly
@@ -55,7 +55,7 @@ def test_unavailable_hourly_data_logs_and_preserves_csvs(day, hourly, tmp_path, 
         run_collector("ridership", "--day", day, "--api-response", fixture, "--output-dir", output)
     assert error.value.code == 2
     assert {path: path.read_bytes() for path in before} == before
-    record = anomaly_helpers.read_last_record(output / "Discrepancies/anomaly_log.jsonl")
+    record = anomaly_helpers.read_last_record(output / "discrepancies/anomaly_log.jsonl")
     assert record["status"] == ("pending_retry" if day == "0" else "needs_review")
     assert record["reason"] == "payload_missing_hourly_categories"
     expected = datetime.fromisoformat(record["ist_timestamp"]).date() - timedelta(days=int(day))
@@ -156,7 +156,7 @@ def test_retry_skips_fetch_for_waiting_or_terminal_records(status, retry_files, 
 def test_unrelated_cli_error_still_exits_one(tmp_path):
     fixture = tmp_path / "bad.json"
     fixture.write_text('{"responses": {}}')
-    result = subprocess.run([sys.executable, "-E", str(Path(ridership.__file__)), "--api-response", str(fixture),
+    result = subprocess.run([sys.executable, "-E", "-m", "collector.ridership", "--api-response", str(fixture),
                              "--output-dir", str(tmp_path / "output")], capture_output=True, text=True, timeout=30)
     assert result.returncode == 1
     assert not (tmp_path / "output").exists()
@@ -166,7 +166,7 @@ def test_retry_cli_starts_without_pythonpath_or_pending_log(tmp_path):
     env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
     script = Path(__file__).resolve().parents[1] / "ridership.py"
     result = subprocess.run(
-        [sys.executable, "-E", str(script), "--retry", "--output-dir", str(tmp_path),
+        [sys.executable, "-E", "-m", "collector.ridership", "--retry", "--output-dir", str(tmp_path),
          "--api-response", str(tmp_path / "unused.json")],
         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30,
     )
@@ -289,7 +289,7 @@ def test_collect_ridership_upserts_all_three_outputs(tmp_path):
 def test_collect_ridership_logs_anomalies(tmp_path):
     _write_existing_ridership(tmp_path, total=200, card=120)
     daily_payload, hourly_payload, station_payload = _payloads(total=150, card=100)
-    log_path = tmp_path / "Discrepancies" / "anomaly_log.jsonl"
+    log_path = tmp_path / "discrepancies" / "anomaly_log.jsonl"
 
     with patch.object(ridership, "fetch_ridership_payloads", return_value=(daily_payload, hourly_payload, station_payload)):
         results = ridership.collect_ridership(day="0", output_dir=tmp_path, anomaly_log=log_path)
@@ -334,7 +334,7 @@ def _payloads(total: int, card: int):
 
 
 def _write_existing_ridership(tmp_path, total: int, card: int) -> None:
-    ridership_dir = tmp_path / "Ridership"
+    ridership_dir = tmp_path / "ridership"
     ridership_dir.mkdir()
     pd.DataFrame([
         {"Date": "2026-04-30", "Total": total, "noOfNCMCcard": card},

@@ -15,12 +15,12 @@ from collector.anomalies import (
     read_last_record, retry_decision,
 )
 from collector.schemas import RIDERSHIP_DAILY, RIDERSHIP_HOURLY, RIDERSHIP_STATION
-from collector.upsert import UpsertResult, upsert_csv
+from collector.upsert import UpsertResult, read_csv, upsert_rows, write_csv_atomic
 
 
-DAILY_FILENAME = "Ridership/ChennaiMetro_Daily_Ridership.csv"
-HOURLY_FILENAME = "Ridership/ChennaiMetro_Hourly_Ridership.csv"
-STATION_FILENAME = "Ridership/ChennaiMetro_Station_Ridership.csv"
+DAILY_FILENAME = "ridership/ChennaiMetro_Daily_Ridership.csv"
+HOURLY_FILENAME = "ridership/ChennaiMetro_Hourly_Ridership.csv"
+STATION_FILENAME = "ridership/ChennaiMetro_Station_Ridership.csv"
 
 BASE_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
 
@@ -73,6 +73,17 @@ STATION_CODES = {
     # Interchange stations
     "CENTRAL  METRO": "SCC",
     "ALANDUR": "SAL",
+    # Yellow Line (corridor 4)
+    "POONAMALLEE BYPASS METRO": "POB",
+    "POONAMALLEE BUS STAND METRO": "POO",
+    "POONAMALLEE GOVERNMENT HOSPITAL METRO": "MUL",
+    "KARAYANCHAVADI METRO": "KAC",
+    "KUMANANCHAVADI METRO": "KUC",
+    "KATTUPAKKAM METRO": "KPM",
+    "IYAPPANTHANGAL METRO": "IYP",
+    "THELLIYARAGARAM METRO": "THL",
+    "PORUR BYPASS METRO": "PBP",
+    "PORUR JUNCTION METRO": "PRJ",
 }
 
 
@@ -146,12 +157,12 @@ def normalize_station(station_response: list[dict[str, Any]], date: str) -> pd.D
             row.update({method: series[method][index] for method in line_payment_methods})
             rows.append(row)
 
-    return pd.DataFrame(rows, columns=["Date", "Line", "Station", "Total", *sorted(payment_methods)])
+    return pd.DataFrame(rows, columns=["Date", "Line", "Station", "Total", *sorted(payment_methods)], dtype=object)
 
 
 def collect_ridership(
     day: str = "1",
-    output_dir: str | Path = ".",
+    output_dir: str | Path = "data",
     dry_run: bool = False,
     anomaly_log: str | Path = ANOMALY_LOG_PATH,
     api_response: str | Path | None = None,
@@ -195,9 +206,14 @@ def collect_ridership(
             print(f"Dry run: prepared {len(dataframe)} {schema.name} rows for {date}")
             continue
 
-        result = upsert_csv(path, dataframe, schema)
+        column = "noOfUTPQR" if schema == RIDERSHIP_DAILY else "UTP QR"
+        result = upsert_rows(read_csv(path), dataframe, schema, zero_columns=(column,))
         results.append(result)
         print(_format_result(schema.name, date, result))
+
+    # Validate every dataset before writing any of them.
+    for (path, _, _), result in zip(datasets, results):
+        write_csv_atomic(path, result.dataframe)
 
     if results and has_anomalies(results):
         log_path = _resolve_output_path(output_dir, anomaly_log)
@@ -251,7 +267,7 @@ def parse_args() -> argparse.Namespace:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--day", default="1", choices=("0", "1"), help="CMRL day selector: 0=today, 1=yesterday")
     mode.add_argument("--retry", action="store_true", help="Retry the latest pending live-data anomaly when due")
-    parser.add_argument("--output-dir", default=".", help="Directory containing the Ridership output folder")
+    parser.add_argument("--output-dir", default="data", help="Data root containing the ridership output folder")
     parser.add_argument("--api-response", type=Path, help="Read a JSON response bundle instead of calling the API")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and normalize without writing CSV files")
     parser.add_argument("--strict", action="store_true", help=argparse.SUPPRESS)

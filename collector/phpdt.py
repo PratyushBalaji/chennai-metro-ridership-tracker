@@ -9,18 +9,21 @@ from collector.schemas import PHPDT_DAILY
 from collector.upsert import upsert_csv
 
 
-DAILY_FILENAME = "PHPDT/ChennaiMetro_Daily_PHPDT.csv"
+DAILY_FILENAME = "phpdt/ChennaiMetro_Daily_PHPDT.csv"
 PHPDT_URL = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/PHPDTreport/"
 ROUTE_MAPPING = {
     "saPtoSWDViewModel": {"line": "1", "direction": "UP"},
     "swDtoSAPViewModel": {"line": "1", "direction": "DOWN"},
     "smMtoSCCViewModel": {"line": "2", "direction": "UP"},
     "scCtoSMMViewModel": {"line": "2", "direction": "DOWN"},
+    "poBtoSVAViewModel": {"line": "04", "direction": "UP"},
+    "svAtoPOBViewModel": {"line": "04", "direction": "DOWN"},
 }
 
 
 def extract_station_code(corridor):
     """Extract station codes from a route key like 'seG_SCC2'."""
+    corridor = "_".join(part.split("-", 1)[0] for part in corridor.split("_"))
     parts = "".join(char for char in corridor if char.isalpha() or char == "_").split("_")
     if len(parts) == 2:
         return parts[0].upper(), parts[1].upper()
@@ -28,6 +31,9 @@ def extract_station_code(corridor):
 
 
 def normalize_phpdt(payload):
+    unknown = [key for key, values in payload.items() if values and key not in ROUTE_MAPPING]
+    if unknown:
+        raise ValueError(f"Unknown non-empty PHPDT routes: {', '.join(unknown)}")
     rows = []
     for route_key, route in ROUTE_MAPPING.items():
         if not payload.get(route_key):
@@ -53,10 +59,13 @@ def normalize_phpdt(payload):
                     "End Station": end_station,
                     "PHPDT": count,
                 })
-    return pd.DataFrame(rows)
+    dataframe = pd.DataFrame(rows)
+    if not dataframe.empty and dataframe.duplicated(list(PHPDT_DAILY.key_columns)).any():
+        raise ValueError("PHPDT response contains duplicate corridors")
+    return dataframe
 
 
-def collect_phpdt(output_dir=".", api_response=None, anomaly_log=ANOMALY_LOG_PATH):
+def collect_phpdt(output_dir="data", api_response=None, anomaly_log=ANOMALY_LOG_PATH):
     dataframe = normalize_phpdt(fetch_json(PHPDT_URL, api_response))
     if dataframe.empty:
         print("No PHPDT data available to process.")
@@ -74,7 +83,7 @@ def collect_phpdt(output_dir=".", api_response=None, anomaly_log=ANOMALY_LOG_PAT
 def main():
     parser = argparse.ArgumentParser(description="Collect Chennai Metro PHPDT data.")
     parser.add_argument("--api-response", type=Path, help="Read a JSON response bundle instead of calling the API")
-    parser.add_argument("--output-dir", default=".", help="Directory containing the PHPDT output folder")
+    parser.add_argument("--output-dir", default="data", help="Data root containing the phpdt output folder")
     parser.add_argument("--anomaly-log", type=Path, default=ANOMALY_LOG_PATH)
     args = parser.parse_args()
     results = collect_phpdt(args.output_dir, args.api_response, args.anomaly_log)

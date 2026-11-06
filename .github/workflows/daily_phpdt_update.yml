@@ -25,12 +25,12 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install reqs
-        run: pip install -r requirements-collector.txt
+        run: python -m pip install .
       - name: Run PHPDT
         id: phpdt
         run: |
           set +e
-          python phpdt.py
+          python -m collector.phpdt
           code=$?
           set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
@@ -39,8 +39,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add PHPDT/
-          if [ -d Discrepancies ]; then git add Discrepancies/; fi
+          git add data/phpdt/
+          if [ -d data/discrepancies ]; then git add data/discrepancies/; fi
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "chore(data): update phpdt"
           git pull --rebase origin "$BRANCH_NAME"

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Any
 
 import pandas as pd
 
 from collector.schemas import DatasetSchema
+from collector.csv import read_csv, write_csv_atomic
 
 
 @dataclass(frozen=True)
@@ -49,31 +49,6 @@ class UpsertResult:
         return sum(len(decision.conflicts) for decision in self.decisions)
 
 
-def read_csv(path: str | Path) -> pd.DataFrame:
-    csv_path = Path(path)
-    if not csv_path.exists() or csv_path.stat().st_size == 0:
-        return pd.DataFrame()
-    return pd.read_csv(csv_path, dtype=str, keep_default_na=False)
-
-
-def write_csv_atomic(path: str | Path, dataframe: pd.DataFrame) -> None:
-    csv_path = Path(path)
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        newline="",
-        delete=False,
-        dir=csv_path.parent,
-        suffix=".tmp",
-    ) as temp_file:
-        temp_path = Path(temp_file.name)
-        dataframe.to_csv(temp_file, index=False)
-
-    temp_path.replace(csv_path)
-
-
 def upsert_csv(path: str | Path, incoming: pd.DataFrame, schema: DatasetSchema, *, allow_increases: bool = True) -> UpsertResult:
     existing = read_csv(path)
     result = upsert_rows(existing, incoming, schema, allow_increases=allow_increases)
@@ -81,9 +56,12 @@ def upsert_csv(path: str | Path, incoming: pd.DataFrame, schema: DatasetSchema, 
     return result
 
 
-def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetSchema, *, allow_increases: bool = True) -> UpsertResult:
+def upsert_rows(existing: pd.DataFrame, incoming: pd.DataFrame, schema: DatasetSchema, *, allow_increases: bool = True, zero_columns: tuple[str, ...] = ()) -> UpsertResult:
     existing = normalize_columns(existing.copy(), schema)
     incoming = normalize_columns(incoming.copy(), schema)
+    for column in zero_columns:
+        if column in incoming and column not in existing:
+            existing[column] = 0
 
     _require_columns(incoming, schema.key_columns, "incoming")
     if not existing.empty:

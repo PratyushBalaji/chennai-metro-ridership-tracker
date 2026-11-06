@@ -4,3 +4,9 @@ __pycache__*
 .coverage
 coverage.xml
 test-results.xml
+.station-code-backups/
+.cache/
+.venv/
+*.egg-info/
+build/
+dist/

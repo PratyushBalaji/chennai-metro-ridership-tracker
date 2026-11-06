@@ -12,7 +12,7 @@ from collector.upsert import UpsertResult
 
 
 ANOMALY_EXIT_CODE = 2
-ANOMALY_LOG_PATH = Path("Discrepancies/anomaly_log.jsonl")
+ANOMALY_LOG_PATH = Path("discrepancies/anomaly_log.jsonl")
 IST = ZoneInfo("Asia/Kolkata")
 RETRY_WAIT_MINUTES = 15
 RETRY_CUTOFF_IST = time(23, 50)

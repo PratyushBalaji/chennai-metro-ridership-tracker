@@ -30,17 +30,13 @@ Accordingly:
 
 ## General Information
 
-The [ridership.py](./ridership.py), [parking.py](./parking.py) and [phpdt.py](./phpdt.py) files collect, process and update the CSVs. Install collector dependencies with `pip install -r requirements-collector.txt`; the full requirements file also includes notebook packages.
+The [ridership.py](./collector/ridership.py), [parking.py](./collector/parking.py) and [phpdt.py](./collector/phpdt.py) files perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
 
-Ridership and parking accept increases and blank backfills. PHPDT only accepts new records and blank backfills; changed counts or peak hours need review. Anomalous rows stay unchanged, are logged in `Discrepancies/anomaly_log.jsonl`, and cause exit code `2`. Accepted rows are still saved.
+The CSV files contain the actual historical [daily](./data/ridership/ChennaiMetro_Daily_Ridership.csv), [hourly](./data/ridership/ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./data/ridership/ChennaiMetro_Station_Ridership.csv) ridership, parking and PHPDT data. The collection was started on January 24th 2026.
 
-Parking station CSVs now use `Eight Wheeler` only. The old `Eight Wheleer` column is folded into it on collection; conflicting populated values stop collection before any parking CSV writes.
+The project directory also contains [a Jupyter Notebook](./notebooks/ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use `pip install -e ".[notebook]"` to install any Python modules required in the notebook through pip.
 
-The CSV files contain the actual historical [daily](./ChennaiMetro_Daily_Ridership.csv), [hourly](./ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./ChennaiMetro_Station_Ridership.csv) ridership, parking and PHPDT data. The collection was started on January 24th 2026.
-
-The project directory also contains [a Jupyter Notebook](./ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use the [requirements file](requirements.txt) to install any Python modules required in the notebook through pip.
-
-The [CMRL API](./CMRL%20API/) folder contains a Bruno collection that was used for the API testing. You can use it to hit the API endpoints and view the JSON response, incase you want to fetch the data directly from the source or mess with the API. This collection can also be exported to Postman, as cURL requests, etc, for your convenience.
+The [tools/bruno](./tools/bruno/) folder contains a Bruno collection that was used for the API testing. You can use it to hit the API endpoints and view the JSON response, incase you want to fetch the data directly from the source or mess with the API. This collection can also be exported to Postman, as cURL requests, etc, for your convenience.
 
 Currently, the repository collates : 
 - Ridership Data (Daily, Hourly, Stationwise) broken down by fare payment method
@@ -69,7 +65,22 @@ Each CSV file contains these generic columns, with some particulars depending on
 **Specific Columns :**
 
 - Hourly : Hour (HH:MM format)
-- Station-wise : Line (01|02), Station (3-letter Unique Station Code)
+- Station-wise : Line (01|02|04), Station (station code)
+
+Line 04 uses the CMRL PHPDT codes POB, POO, MUL, KAC, KUC, KPM, IYP, THL,
+PBP, PRJ, and SVA in route order. Vadapalani stays SVA on both lines 02 and 04.
+
+UTP is stored as `noOfUTPQR` in daily ridership and `UTP QR` in hourly/station data.
+Older UTP values are backfilled with zero; this is a backfill assumption, not a
+historical measurement. Other missing values are left alone.
+
+Parking station CSVs use `Eight Wheeler` only; the old `Eight Wheleer` header is
+coalesced into it, with conflicting populated values rejected.
+
+PHPDT includes line 04 when its route arrays have data. Poonamallee to Vadapalani is
+labelled UP, the reverse DOWN. API suffixes such as SVA4, SCC-C2 and SAL-C2
+normalize to SVA, SCC and SAL; POB remains POB. Empty arrays
+produce a warning, not invented zero-count corridors.
 
 ### Potential Alternatives
 
