@@ -1,10 +1,10 @@
 # collector benchmark
 
-These tests execute the current root `ridership.py`, `parking.py` and `phpdt.py`.
+These tests execute the current `collector.ridership`, `collector.parking` and `collector.phpdt` modules.
 Expected CSVs were captured from the original main scripts at `991a0a4`.
 
 ```sh
-pip install -r requirements-test.txt
+pip install -e ".[test]"
 python -m pytest
 ```
 
@@ -29,15 +29,15 @@ workflow input.
 All three collectors accept the same fixed responses directly from the command line:
 
 ```sh
-python ridership.py --api-response tests/fixtures/api/day1.json --output-dir test-output
-python parking.py --api-response tests/fixtures/api/day1.json --output-dir test-output
-python phpdt.py --api-response tests/fixtures/api/day1.json --output-dir test-output
+python -m collector.ridership --api-response tests/fixtures/api/day1.json --output-dir test-output
+python -m collector.parking --api-response tests/fixtures/api/day1.json --output-dir test-output
+python -m collector.phpdt --api-response tests/fixtures/api/day1.json --output-dir test-output
 ```
 
-This writes CSVs under `test-output/Ridership/`, `test-output/Parking/` and
-`test-output/PHPDT/`. Without `--api-response`, the scripts call the live API.
-Without `--output-dir`, they use the usual output folders. The CLI tests run
-the root scripts with these flags, compare the CSVs and verify that no HTTP
+This writes CSVs under `test-output/ridership/`, `test-output/parking/` and
+`test-output/phpdt/`. Without `--api-response`, the scripts call the live API.
+Without `--output-dir`, they use the output folders under `data/`. The CLI tests run
+the collector modules with these flags, compare the CSVs and verify that no HTTP
 calls happened. Parking's date fallback also reads from the JSON file;
 `DATASET_DATE` still takes precedence when supplied by the workflow.
 
@@ -48,14 +48,14 @@ spec. The original scripts only skip when the API date equals the last CSV row.
 To explicitly record a replacement response bundle:
 
 ```sh
-python tests/record_api_responses.py --day 1 --output tests/fixtures/api/day1.json
+python tools/record_api_responses.py --day 1 --output tests/fixtures/api/day1.json
 ```
 
 Review changes to the JSON and expected CSVs together. Tests never regenerate
 expected CSVs automatically.
 
-GitHub Actions first runs each root collector with `--api-response` and
+GitHub Actions first runs each collector module with `--api-response` and
 `--output-dir`, then runs pytest on main, dev branches and PRs. The generated
-CSVs, JUnit results and coverage report are uploaded. The original functionality has 19 benchmark tests,
+CSVs, JUnit results and coverage report (under `.cache/reports/`) are uploaded. The original functionality has 19 benchmark tests,
 plus 13 tests for the file-input CLI. This is a
 regression benchmark, not a guarantee about future CMRL availability.

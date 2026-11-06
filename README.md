@@ -30,13 +30,13 @@ Accordingly:
 
 ## General Information
 
-The [ridership.py](./ridership.py), [parking.py](./parking.py) and [phpdt.py](./phpdt.py) files perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
+The [ridership.py](./collector/ridership.py), [parking.py](./collector/parking.py) and [phpdt.py](./collector/phpdt.py) files perform the data scraping, basic pre-processing, and daily data append to the actual CSVs. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
 
-The CSV files contain the actual historical [daily](./ChennaiMetro_Daily_Ridership.csv), [hourly](./ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./ChennaiMetro_Station_Ridership.csv) ridership, parking and PHPDT data. The collection was started on January 24th 2026.
+The CSV files contain the actual historical [daily](./data/ridership/ChennaiMetro_Daily_Ridership.csv), [hourly](./data/ridership/ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./data/ridership/ChennaiMetro_Station_Ridership.csv) ridership, parking and PHPDT data. The collection was started on January 24th 2026.
 
-The project directory also contains [a Jupyter Notebook](./ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use the [requirements file](requirements.txt) to install any Python modules required in the notebook through pip.
+The project directory also contains [a Jupyter Notebook](./notebooks/ChennaiMetroDataViz.ipynb) that takes you through how to recreate the graphs on the official CMRL dashboard using the data being collected. Use `pip install -e ".[notebook]"` to install any Python modules required in the notebook through pip.
 
-The [CMRL API](./CMRL%20API/) folder contains a Bruno collection that was used for the API testing. You can use it to hit the API endpoints and view the JSON response, incase you want to fetch the data directly from the source or mess with the API. This collection can also be exported to Postman, as cURL requests, etc, for your convenience.
+The [tools/bruno](./tools/bruno/) folder contains a Bruno collection that was used for the API testing. You can use it to hit the API endpoints and view the JSON response, incase you want to fetch the data directly from the source or mess with the API. This collection can also be exported to Postman, as cURL requests, etc, for your convenience.
 
 Currently, the repository collates : 
 - Ridership Data (Daily, Hourly, Stationwise) broken down by fare payment method
