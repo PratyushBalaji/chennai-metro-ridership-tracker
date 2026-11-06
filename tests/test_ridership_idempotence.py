@@ -51,7 +51,8 @@ def cases():
 @pytest.fixture
 def scenario(tmp_path, cases, run_collector, http_mock):
     output = tmp_path / "output"
-    shutil.copytree(FIXTURES / "seed", output)
+    shutil.copytree(FIXTURES / "seed/Ridership", output / "ridership")
+    assert {path.name for path in output.iterdir()} == {"ridership"}
 
     def run(case_name, day="1", exit_code=0, date=None, payload=None):
         payload = copy.deepcopy(cases[case_name] if payload is None else payload)
