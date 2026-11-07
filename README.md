@@ -71,20 +71,14 @@ Each CSV file contains these generic columns, with some particulars depending on
 - Hourly : Hour (HH:MM format)
 - Station-wise : Line (01|02|04), Station (station code)
 
-Line 04 uses the CMRL PHPDT codes POB, POO, MUL, KAC, KUC, KPM, IYP, THL,
-PBP, PRJ, and SVA in route order. Vadapalani stays SVA on both lines 02 and 04.
+Lines 01 and 02 use the official station codes as on the CMRL website and Wikipedia, The new line 04 uses the CMRL PHPDT codes POB, POO, MUL, KAC, KUC, KPM, IYP, THL, PBP, PRJ, and SVA in route order as their official codes are not public knowledge yet. Interchange stations retain one code across lines but are tagged with their line number as opposed to how they are internally displayed (SVA, SVA4, SAL_C1, SAL_C2, etc)
 
 UTP is stored as `noOfUTPQR` in daily ridership and `UTP QR` in hourly/station data.
-Older UTP values are backfilled with zero; this is a backfill assumption, not a
-historical measurement. Other missing values are left alone.
+Older UTP values have been backfilled with zero as the fare type was not previously in use.
 
-Parking station CSVs use `Eight Wheeler` only; the old `Eight Wheleer` header is
-coalesced into it, with conflicting populated values rejected.
+Parking station CSVs use `Eight Wheeler` only; the old `Eight Wheleer` \[sic\] header is coalesced into it, with conflicting populated values rejected.
 
-PHPDT includes line 04 when its route arrays have data. Poonamallee to Vadapalani is
-labelled UP, the reverse DOWN. API suffixes such as SVA4, SCC-C2 and SAL-C2
-normalize to SVA, SCC and SAL; POB remains POB. Empty arrays
-produce a warning, not invented zero-count corridors.
+PHPDT includes line 04 when its route arrays have data. Poonamallee to Vadapalani is labelled UP, the reverse DOWN. API suffixes such as SVA4, SCC-C2 and SAL-C2 normalise to SVA, SCC and SAL.
 
 ### Potential Alternatives
 
