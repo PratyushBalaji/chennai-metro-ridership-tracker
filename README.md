@@ -32,9 +32,9 @@ Accordingly:
 
 The [ridership.py](./collector/ridership.py), [parking.py](./collector/parking.py) and [phpdt.py](./collector/phpdt.py) files perform the data scraping, basic pre-processing, and CSV upserts. These are what will be used to maintain the dataset. (Requirements : `os`, `pandas`, `requests`)
 
-Ridership and parking only update a row if all populated values stay equal or increase; blank values can be filled. Mixed/lower rows are kept unchanged and flagged. PHPDT only inserts missing corridors or fills blanks; changes to populated counts or hours need review.
+Ridership replaces a date's daily, hourly and station data together. Complete, reconciled snapshots can revise counts up or down. Failed checks trigger one fresh attempt after 60 seconds: `/0` may then publish a complete but unverified provisional snapshot, while `/1` is held for review. Missing/malformed data is never forced through. Parking still uses strict row upsert; PHPDT only inserts missing corridors or fills blanks and flags populated corrections.
 
-Anomalies are appended to `data/discrepancies/anomaly_log.jsonl` with UTC/IST timestamps. Exit code `0` means success, `2` means anomalies (other valid rows may still be saved), and `1` means a collection error. See [tests](./tests/README.md) for fixture testing and retry behaviour.
+Publication and anomaly records are appended to `data/discrepancies/anomaly_log.jsonl` with UTC/IST timestamps. Flagged ridership attempts and accepted reductions retain full replayable payloads under `data/discrepancies/payloads/ridership/`. Exit code `0` means validated success/no-op, `2` means held data or published validation warnings, and `1` means a collection error. Parking/PHPDT retain their existing row-anomaly exit behavior. See [tests](./tests/README.md) for fixture testing and retry behaviour. Arithmetic consistency does not establish that CMRL reported every passenger; statistical plausibility checks remain future work.
 
 The CSV files contain the actual historical [daily](./data/ridership/ChennaiMetro_Daily_Ridership.csv), [hourly](./data/ridership/ChennaiMetro_Hourly_Ridership.csv), and [stationwise](./data/ridership/ChennaiMetro_Station_Ridership.csv) ridership, parking and PHPDT data. The collection was started on January 24th 2026.
 

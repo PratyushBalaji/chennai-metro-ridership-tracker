@@ -42,6 +42,15 @@ def test_filtered_tail_stops_at_latest_terminal_record(tmp_path):
     assert read_last_record(path, source="ridership", day="0")["status"] == "resolved"
 
 
+def test_publication_lookup_skips_other_dates_and_nonpublication_events(tmp_path):
+    path = tmp_path / "anomaly_log.jsonl"
+    target = {"source": "ridership", "day": "1", "date": "2026-11-06", "status": "published_final"}
+    for record in (target, {**target, "date": "2026-11-07"}, {**target, "status": "needs_review"}):
+        append_jsonl(path, record)
+    assert read_last_record(path, source="ridership", dataset_date="2026-11-06",
+                            statuses=("published_final", "published_provisional")) == target
+
+
 @pytest.mark.parametrize("status", ("resolved", "expired", "needs_review"))
 def test_retry_ignores_terminal_records(status):
     assert retry_decision({"status": status}) == "skip"

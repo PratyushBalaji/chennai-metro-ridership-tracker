@@ -120,12 +120,17 @@ def append_jsonl(path: str | Path, record: dict[str, Any]) -> None:
         file.write((json.dumps(_json_value(record), ensure_ascii=True, sort_keys=True) + "\n").encode("utf-8"))
 
 
-def read_last_record(path: str | Path, *, source: str | None = None, day: str | None = None) -> dict[str, Any] | None:
+def read_last_record(path: str | Path, *, source: str | None = None, day: str | None = None,
+                     dataset_date: str | None = None, statuses: tuple[str, ...] | None = None) -> dict[str, Any] | None:
     for line in _read_lines_reverse(path):
         record = json.loads(line)
         if source is not None and record.get("source") != source:
             continue
         if day is not None and str(record.get("day")) != day:
+            continue
+        if dataset_date is not None and record.get("date") != dataset_date:
+            continue
+        if statuses is not None and record.get("status") not in statuses:
             continue
         return record
     return None

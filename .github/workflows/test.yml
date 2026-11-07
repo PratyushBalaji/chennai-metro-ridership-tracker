@@ -24,7 +24,7 @@ jobs:
       - name: Run ridership with fixed API response
         run: >-
           python -m collector.ridership
-          --api-response tests/fixtures/api/day1.json
+          --api-response tests/fixtures/api/consistent_ridership.json
           --output-dir "$RUNNER_TEMP/ridership-cli"
       - name: Run parking with fixed API response
         run: >-

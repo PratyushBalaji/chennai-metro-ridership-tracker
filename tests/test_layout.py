@@ -15,7 +15,7 @@ def test_installed_module_defaults_to_data_root(name, count, tmp_path):
            if not key.startswith("PYTHON") and key != "DATASET_DATE"}
     result = subprocess.run(
         [sys.executable, "-E", "-m", f"collector.{name}", "--api-response",
-         str(FIXTURES / "api/day1.json")],
+         str(FIXTURES / "api" / ("consistent_ridership.json" if name == "ridership" else "day1.json"))],
         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30,
     )
     assert result.returncode == 0, result.stderr

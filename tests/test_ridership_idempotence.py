@@ -1,226 +1,330 @@
 import copy
-from datetime import datetime
 import json
+from datetime import datetime, timezone
 from pathlib import Path
-import shutil
+from types import SimpleNamespace
 
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
+import responses
+
+from collector import ridership
+from collector.anomalies import append_jsonl, read_last_record
+from collector.csv import write_csv_group
 
 
 pytestmark = pytest.mark.idempotence
-FIXTURES = Path(__file__).parent / "fixtures/idempotence"
-DATE = "2026-06-15"
-FILES = {
-    "daily": "ridership/ChennaiMetro_Daily_Ridership.csv",
-    "hourly": "ridership/ChennaiMetro_Hourly_Ridership.csv",
-    "station": "ridership/ChennaiMetro_Station_Ridership.csv",
-}
-KEYS = {"daily": ["Date"], "hourly": ["Date", "Hour"], "station": ["Date", "Line", "Station"]}
-CARDS = {"daily": "noOfNCMCcard", "hourly": "Singara Chennai Card", "station": "Singara Chennai Card"}
-QR = {"daily": "noOfPaperQR", "hourly": "Paper QR", "station": "Paper QR"}
 
 
-def read_outputs(output):
-    return {name: pd.read_csv(output / filename, dtype=str, keep_default_na=False)
-            for name, filename in FILES.items()}
+def payload(bundle, name):
+    return next(value for url, value in bundle["responses"].items() if url.endswith(name + "/" + bundle["day"]))
 
 
-def target(frame, name, date=DATE):
-    mask = frame["Date"] == date
-    if name == "hourly":
-        mask &= frame["Hour"] == "10:00"
-    elif name == "station":
-        mask &= (frame["Line"] == "01") & (frame["Station"] == "SCC")
-    return mask
+def live(bundle, recorded="2026-11-06T12:00:00+00:00"):
+    bundle = copy.deepcopy(bundle)
+    bundle.update(day="0", recorded_at_utc=recorded)
+    bundle["responses"] = {url[:-1] + "0": data for url, data in bundle["responses"].items()}
+    return bundle
 
 
-def assert_outputs(output, expected):
-    for name, actual in read_outputs(output).items():
-        assert not actual.duplicated(KEYS[name]).any()
-        assert_frame_equal(actual.sort_values(KEYS[name]).reset_index(drop=True),
-                           expected[name].sort_values(KEYS[name]).reset_index(drop=True))
+def frames(tmp_path):
+    return [pd.read_csv(tmp_path / "output" / name, dtype=str, keep_default_na=False) for name in ridership.FILENAMES]
 
 
-@pytest.fixture
-def cases():
-    return json.loads((FIXTURES / "cases.json").read_text(encoding="utf-8"))["cases"]
+def csv_bytes(tmp_path):
+    return {path: path.read_bytes() for path in (tmp_path / "output").rglob("*.csv")}
 
 
-@pytest.fixture
-def scenario(tmp_path, cases, run_collector, http_mock):
+def changed_counts(bundle, per_station):
+    bundle = copy.deepcopy(bundle)
+    bundle["recorded_at_utc"] = "2026-11-07T05:00:00+00:00"
+    total = 54 * per_station
+    payload(bundle, "allTicketCount").update(totalTickets=total, noOfNCMCcard=total)
+    for series in payload(bundle, "hourlybaseddata")["series"]:
+        if series["name"] in ("Total", "Singara Chennai Card"):
+            series["data"] = [total if i == 3 else 0 for i in range(len(series["data"]))]
+    for line in payload(bundle, "stationData"):
+        for series in line["series"]:
+            if series["name"] in ("Total", "Singara Chennai Card"):
+                series["data"] = [per_station] * len(line["categories"])
+    return bundle
+
+
+def log(tmp_path):
+    return tmp_path / "output/discrepancies/anomaly_log.jsonl"
+
+
+def test_identical_replay_is_a_noop(snapshot_bundle, collect_snapshot, tmp_path):
+    assert collect_snapshot(snapshot_bundle).exit_code == 0
+    before = {**csv_bytes(tmp_path), log(tmp_path): log(tmp_path).read_bytes()}
+    result = collect_snapshot(snapshot_bundle)
+    assert result.exit_code == 0 and not result.published
+    assert {path: path.read_bytes() for path in before} == before
+
+
+@pytest.mark.parametrize("count", (0, 4, 6))
+def test_valid_revisions_replace_the_entire_day_and_preserve_history(count, snapshot_bundle, collect_snapshot, tmp_path):
+    collect_snapshot(snapshot_bundle)
+    originals = frames(tmp_path)
+    for filename, frame in zip(ridership.FILENAMES, originals):
+        history = pd.concat([frame.assign(Date="2000-01-01"), frame, frame.assign(Date="2099-12-31")], ignore_index=True)
+        history.to_csv(tmp_path / "output" / filename, index=False)
+    result = collect_snapshot(changed_counts(snapshot_bundle, count))
+    assert result.exit_code == 0
+    for actual, old in zip(frames(tmp_path), originals):
+        current = actual.loc[actual.Date == "2026-11-06"]
+        assert pd.to_numeric(current.Total).sum() == 54 * count
+        for date in ("2000-01-01", "2099-12-31"):
+            assert_frame_equal(actual.loc[actual.Date == date].reset_index(drop=True), old.assign(Date=date))
+    record = read_last_record(log(tmp_path))
+    assert record["status"] == "published_final" and record["validation_passed"]
+    assert bool(record["anomalies"]) == (count != 5)
+    if count < 5:
+        assert len(record["anomalies"]) == 56
+        assert len(result.raw_paths) == 1
+        replay = ridership.collect_ridership(api_response=tmp_path / "output" / result.raw_paths[0],
+                                             output_dir=tmp_path / "replay")
+        assert replay.exit_code == 0
+        assert pd.read_csv(tmp_path / "replay" / ridership.DAILY_FILENAME).Total.iloc[0] == 54 * count
+    else:
+        assert not result.raw_paths
+
+
+def test_failed_final_does_not_accept_individual_good_rows(snapshot_bundle, collect_snapshot, tmp_path):
+    collect_snapshot(snapshot_bundle)
+    before = csv_bytes(tmp_path)
+    incoming = changed_counts(snapshot_bundle, 6)
+    payload(incoming, "allTicketCount")["totalTickets"] += 1
+    result = collect_snapshot(incoming)
+    assert result.status == "needs_review"
+    assert not result.published
+    assert csv_bytes(tmp_path) == before
+
+
+def test_valid_mixed_fare_changes_are_accepted_together(snapshot_bundle, collect_snapshot, tmp_path):
+    collect_snapshot(snapshot_bundle)
+    bundle = copy.deepcopy(snapshot_bundle)
+    bundle["recorded_at_utc"] = "2026-11-07T05:00:00+00:00"
+    payload(bundle, "allTicketCount").update(noOfNCMCcard=269, noOfPaperQR=1, noOfTotal_QR=1)
+    hourly = payload(bundle, "hourlybaseddata")
+    for series in hourly["series"]:
+        if series["name"] == "Singara Chennai Card":
+            series["data"][3] -= 1
+        elif series["name"] == "Paper QR":
+            series["data"][3] += 1
+    for series in payload(bundle, "stationData")[0]["series"]:
+        if series["name"] == "Singara Chennai Card":
+            series["data"][0] -= 1
+        elif series["name"] == "Paper QR":
+            series["data"][0] += 1
+    result = collect_snapshot(bundle)
+    assert result.exit_code == 0 and len(result.revisions) == 3
+    assert [pd.to_numeric(frame.Total).sum() for frame in frames(tmp_path)] == [270, 270, 270]
+    assert frames(tmp_path)[0].iloc[0]["noOfPaperQR"] == "1"
+
+
+def test_final_precedence_and_old_capture_protection(snapshot_bundle, collect_snapshot, tmp_path):
+    collect_snapshot(snapshot_bundle)
+    before = csv_bytes(tmp_path)
+    assert collect_snapshot(live(snapshot_bundle), day="0").status == "unchanged"
+    older = changed_counts(snapshot_bundle, 4)
+    older["recorded_at_utc"] = "2026-11-07T03:00:00+00:00"
+    assert collect_snapshot(older).status == "unchanged"
+    assert csv_bytes(tmp_path) == before
+
+
+def test_fresh_unchanged_capture_advances_the_watermark(snapshot_bundle, collect_snapshot, tmp_path):
+    collect_snapshot(snapshot_bundle)
+    before = csv_bytes(tmp_path)
+    snapshot_bundle["recorded_at_utc"] = "2026-11-07T06:00:00+00:00"
+    assert collect_snapshot(snapshot_bundle).exit_code == 0
+    assert csv_bytes(tmp_path) == before
+    older = changed_counts(snapshot_bundle, 4)  # 05:00 capture
+    assert collect_snapshot(older).status == "unchanged"
+    assert csv_bytes(tmp_path) == before
+    assert len(log(tmp_path).read_text().splitlines()) == 2
+
+
+def test_final_promotes_live_snapshot_without_rewriting_csvs(snapshot_bundle, collect_snapshot, tmp_path):
+    assert collect_snapshot(live(snapshot_bundle), day="0").status == "published_provisional"
+    before = csv_bytes(tmp_path)
+    result = collect_snapshot(snapshot_bundle)
+    assert result.status == "published_final" and result.exit_code == 0
+    assert csv_bytes(tmp_path) == before
+
+
+@pytest.mark.parametrize("valid", (True, False))
+def test_dry_run_is_write_free_and_does_not_sleep(valid, snapshot_bundle, collect_snapshot, tmp_path):
+    if not valid:
+        payload(snapshot_bundle, "allTicketCount")["totalTickets"] += 1
+    result = collect_snapshot(snapshot_bundle, dry_run=True)
+    assert result.exit_code == (0 if valid else 2)
+    assert not result.published
+    assert not (tmp_path / "output").exists()
+    ridership.sleep.assert_not_called()
+
+
+def test_latest_complete_attempt_is_used_when_retry_is_incomplete(snapshot_bundle, snapshot_clock, tmp_path):
+    snapshot_clock.now.return_value = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+    first = live(snapshot_bundle)
+    payload(first, "allTicketCount")["totalTickets"] = 271
+    second = copy.deepcopy(first)
+    payload(second, "stationData").pop()
+    with responses.RequestsMock() as mock:
+        for bundle in (first, second):
+            for url, data in bundle["responses"].items():
+                mock.get(url, json=data)
+        result = ridership.collect_ridership(day="0", output_dir=tmp_path / "output")
+    assert result.exit_code == 2 and result.published
+    assert read_last_record(log(tmp_path))["selected_attempt"] == 1
+    assert [pd.to_numeric(frame.Total).sum() for frame in frames(tmp_path)] == [271, 270, 270]
+
+
+def test_no_retry_across_midnight(snapshot_bundle, snapshot_clock, tmp_path, monkeypatch):
+    snapshot_clock.now.return_value = datetime(2026, 11, 6, 18, 17, tzinfo=timezone.utc)
+    bundle = live(snapshot_bundle)
+    payload(bundle, "stationData").pop()
+    def jump(_):
+        snapshot_clock.now.return_value = datetime(2026, 11, 6, 18, 31, tzinfo=timezone.utc)
+    monkeypatch.setattr(ridership, "sleep", jump)
+    with responses.RequestsMock() as mock:
+        for url, data in bundle["responses"].items():
+            mock.get(url, json=data)
+        result = ridership.collect_ridership(day="0", output_dir=tmp_path / "output")
+        assert len(mock.calls) == 3
+    assert result.status == "pending_retry"
+    assert not csv_bytes(tmp_path)
+
+
+def test_cutoff_uses_fallback_without_an_unsafe_retry(snapshot_bundle, collect_snapshot, tmp_path):
+    bundle = live(snapshot_bundle, "2026-11-06T18:19:30+00:00")  # 23:49:30 IST
+    payload(bundle, "allTicketCount")["totalTickets"] += 1
+    result = collect_snapshot(bundle, day="0")
+    assert result.exit_code == 2 and result.published
+    ridership.sleep.assert_not_called()
+    assert len(result.raw_paths) == 1
+
+
+@pytest.mark.parametrize("phase", ("serialize", "replace"))
+def test_group_write_failure_restores_original_snapshot(phase, snapshot_bundle, collect_snapshot, tmp_path, monkeypatch):
+    collect_snapshot(snapshot_bundle)
+    before = {**csv_bytes(tmp_path), log(tmp_path): log(tmp_path).read_bytes()}
+    if phase == "serialize":
+        original = pd.DataFrame.to_csv
+        calls = []
+        def fail(frame, *args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                raise OSError("disk error")
+            return original(frame, *args, **kwargs)
+        monkeypatch.setattr(pd.DataFrame, "to_csv", fail)
+    else:
+        original = Path.replace
+        calls = []
+        def fail(path, target):
+            calls.append(1)
+            if len(calls) == 2:
+                raise OSError("disk error")
+            return original(path, target)
+        monkeypatch.setattr(Path, "replace", fail)
+    with pytest.raises(OSError, match="disk error"):
+        collect_snapshot(changed_counts(snapshot_bundle, 4))
+    assert {path: path.read_bytes() for path in before} == before
+    assert not list((tmp_path / "output").rglob("*.tmp"))
+
+
+def test_group_write_rolls_back_new_files(tmp_path, monkeypatch):
+    original = Path.replace
+    calls = []
+    def fail(path, target):
+        calls.append(1)
+        if len(calls) == 2:
+            raise OSError("disk error")
+        return original(path, target)
+    monkeypatch.setattr(Path, "replace", fail)
+    with pytest.raises(OSError):
+        write_csv_group([(tmp_path / "a.csv", pd.DataFrame([{"Total": 1}])),
+                         (tmp_path / "b.csv", pd.DataFrame([{"Total": 1}]))])
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("finalized", (False, True))
+def test_legacy_pending_retry_recovers_or_recognizes_final_data(finalized, snapshot_bundle, snapshot_clock, tmp_path):
     output = tmp_path / "output"
-    shutil.copytree(FIXTURES / "seed/Ridership", output / "ridership")
-    assert {path.name for path in output.iterdir()} == {"ridership"}
-
-    def run(case_name, day="1", exit_code=0, date=None, payload=None):
-        payload = copy.deepcopy(cases[case_name] if payload is None else payload)
-        if date is not None:
-            payload["hourly"]["categories"] = [f"{date}T10:00:00"]
-        base = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
-        responses = {f"{base}{endpoint}/{day}": payload[name] for endpoint, name in (
-            ("allTicketCount", "daily"), ("hourlybaseddata", "hourly"), ("stationData", "station"),
-        )}
-        response_file = tmp_path / "response.json"
-        response_file.write_text(json.dumps({"responses": responses}), encoding="utf-8")
-        args = ("--day", day, "--api-response", response_file, "--output-dir", output, "--strict")
-        if exit_code:
-            with pytest.raises(SystemExit) as error:
-                run_collector("ridership", *args)
-            assert error.value.code == exit_code
-        else:
-            run_collector("ridership", *args)
-        assert not http_mock.calls
-
-    return output, run
+    previous = {"source": "ridership", "day": "0", "date": "2026-11-06", "status": "pending_retry",
+                "utc_timestamp": "2026-11-06T11:40:00Z", "reason": "strict_upsert_anomaly", "anomalies": []}
+    append_jsonl(log(tmp_path), previous)
+    path = tmp_path / "input.json"
+    if finalized:
+        path.write_text(json.dumps(snapshot_bundle))
+        ridership.collect_ridership(api_response=path, output_dir=output)
+        # Put another old pending record last, as a delayed legacy workflow might.
+        append_jsonl(log(tmp_path), previous)
+    else:
+        snapshot_clock.now.return_value = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+        path.write_text(json.dumps(live(snapshot_bundle)))
+    args = SimpleNamespace(output_dir=output, anomaly_log=ridership.ANOMALY_LOG_PATH,
+                           dry_run=False, api_response=path)
+    assert ridership.retry_ridership(args) == 0
+    assert read_last_record(log(tmp_path))["status"] == "resolved"
+    assert len(csv_bytes(tmp_path)) == 3
 
 
-@pytest.mark.parametrize("day", ("0", "1"))
-@pytest.mark.parametrize("case,values,conflicts,reason", (
-    pytest.param("equal", (150, 100, 50), (), None, id="all-equal-noop"),
-    pytest.param("all_higher", (180, 120, 60), (), None, id="all-higher-update"),
-    pytest.param("higher_and_equal", (180, 100, 50), (), None, id="higher-and-equal-update"),
-    pytest.param("all_lower", (150, 100, 50), ("Total", "card", "qr"), "incoming_value_decreased", id="all-lower-rejected"),
-    pytest.param("lower_and_equal", (150, 100, 50), ("Total",), "incoming_value_decreased", id="lower-and-equal-rejected"),
-    pytest.param("mixed", (150, 100, 50), ("card",), "incoming_value_decreased", id="mixed-whole-row-rejected"),
-    pytest.param("missing_card", (150, 100, 50), ("card",), "incoming_value_missing", id="missing-value-rejected"),
+@pytest.mark.parametrize("status,recorded,dry_run,expected", (
+    ("published_provisional", "2026-11-06T12:00:00+00:00", False, 0),
+    ("pending_retry", "2026-11-06T11:45:00+00:00", False, 0),
+    ("pending_retry", "2026-11-06T18:20:00+00:00", False, 2),
+    ("pending_retry", "2026-11-07T04:00:00+00:00", False, 2),
+    ("pending_retry", "2026-11-06T18:20:00+00:00", True, 2),
 ))
-def test_cli_strict_upsert_preserves_unrelated_rows_and_replays(day, case, values, conflicts, reason, scenario):
-    output, run = scenario
-    expected = read_outputs(output)
-    for name, frame in expected.items():
-        frame.loc[target(frame, name), ["Total", CARDS[name], QR[name]]] = list(map(str, values))
-    log = output / "discrepancies/anomaly_log.jsonl"
-    prefix = b""
-
-    for attempt in range(2):
-        run(case, day, exit_code=2 if conflicts else 0)
-        assert_outputs(output, expected)
-        if not conflicts:
-            assert not log.exists()
-            continue
-
-        current = log.read_bytes()
-        assert current.startswith(prefix)
-        prefix = current
-        records = [json.loads(line) for line in current.splitlines()]
-        assert len(records) == attempt + 1
-        record = records[-1]
-        assert record["source"] == "ridership"
-        assert record["day"] == day
-        assert record["date"] == DATE
-        assert record["status"] == ("pending_retry" if day == "0" else "needs_review")
-        assert record["reason"] == "strict_upsert_anomaly"
-        assert datetime.fromisoformat(record["utc_timestamp"].replace("Z", "+00:00")) == datetime.fromisoformat(record["ist_timestamp"])
-        assert record["ist_timestamp"].endswith("+05:30")
-        assert record["payload_summary"]["hourly_points"] == 1
-        assert record["payload_summary"]["station_count"] == 1
-        anomalies = {entry["dataset"]: entry for entry in record["anomalies"]}
-        assert set(anomalies) == {f"ridership_{name}" for name in FILES}
-        for name in FILES:
-            entry = anomalies[f"ridership_{name}"]
-            columns = {"Total": "Total", "card": CARDS[name], "qr": QR[name]}
-            assert {detail["column"] for detail in entry["details"]} == {columns[c] for c in conflicts}
-            assert {detail["reason"] for detail in entry["details"]} == {reason}
-            assert entry["action"] == "anomaly"
-            assert entry["key"] == {column: expected[name].loc[target(expected[name], name), column].item()
-                                    for column in KEYS[name]}
+def test_retry_uses_recorded_clock_and_does_not_query_wrong_day(
+        status, recorded, dry_run, expected, snapshot_bundle, tmp_path, monkeypatch):
+    previous = {"source": "ridership", "day": "0", "date": "2026-11-06", "status": status,
+                "utc_timestamp": "2026-11-06T11:40:00Z"}
+    append_jsonl(log(tmp_path), previous)
+    before = log(tmp_path).read_bytes()
+    path = tmp_path / "input.json"
+    path.write_text(json.dumps(live(snapshot_bundle, recorded)))
+    def forbidden(*args, **kwargs):
+        raise AssertionError("retry must not collect")
+    monkeypatch.setattr(ridership, "collect_ridership", forbidden)
+    args = SimpleNamespace(output_dir=tmp_path / "output", anomaly_log=ridership.ANOMALY_LOG_PATH,
+                           dry_run=dry_run, api_response=path)
+    assert ridership.retry_ridership(args) == expected
+    if expected == 2 and not dry_run:
+        assert read_last_record(log(tmp_path))["status"] == "expired"
+    else:
+        assert log(tmp_path).read_bytes() == before
 
 
-@pytest.mark.parametrize("date", ("1999-12-31", "2026-06-14", "2100-01-01"))
-def test_insert_before_between_or_after_existing_dates_is_idempotent(date, scenario):
-    output, run = scenario
-    expected = read_outputs(output)
-    for name, frame in expected.items():
-        new_row = frame.loc[target(frame, name)].copy()
-        new_row["Date"] = date
-        expected[name] = pd.concat([frame, new_row], ignore_index=True)
-    for _ in range(2):
-        run("equal", day="0", date=date)
-        assert_outputs(output, expected)
-    assert not (output / "discrepancies/anomaly_log.jsonl").exists()
+def test_dry_run_validates_even_when_published_capture_is_newer(snapshot_bundle, collect_snapshot):
+    collect_snapshot(snapshot_bundle)
+    snapshot_bundle["recorded_at_utc"] = "2026-11-07T03:00:00+00:00"
+    payload(snapshot_bundle, "allTicketCount")["totalTickets"] += 1
+    assert collect_snapshot(snapshot_bundle, dry_run=True).exit_code == 2
 
 
-def test_blank_existing_values_can_be_backfilled(scenario):
-    output, run = scenario
-    expected = read_outputs(output)
-    for name, frame in expected.items():
-        incomplete = frame.copy()
-        incomplete.loc[target(incomplete, name), CARDS[name]] = ""
-        incomplete.to_csv(output / FILES[name], index=False)
-    for _ in range(2):
-        run("equal")
-        assert_outputs(output, expected)
-    assert not (output / "discrepancies/anomaly_log.jsonl").exists()
+def test_pending_date_mismatch_never_changes_published_csvs(snapshot_bundle, collect_snapshot, tmp_path):
+    collect_snapshot(snapshot_bundle)
+    before = csv_bytes(tmp_path)
+    result = collect_snapshot(live(snapshot_bundle), day="0", expected_date="2026-11-05")
+    assert result.exit_code == 2 and not result.published
+    assert any(f["code"] == "selector_date_mismatch" for f in result.findings)
+    assert csv_bytes(tmp_path) == before
+    ridership.sleep.assert_not_called()
 
 
-def test_live_growth_final_replay_and_next_day_are_independent(scenario):
-    output, run = scenario
-    expected = read_outputs(output)
-    run("equal", day="0")
-    assert_outputs(output, expected)
-    for name, frame in expected.items():
-        frame.loc[target(frame, name), ["Total", CARDS[name], QR[name]]] = ["180", "120", "60"]
-    run("all_higher", day="0")
-    assert_outputs(output, expected)
-    run("all_higher", day="1")
-    assert_outputs(output, expected)
-    for name, frame in expected.items():
-        next_day = frame.loc[target(frame, name)].copy()
-        next_day["Date"] = "2026-06-16"
-        next_day[["Total", CARDS[name], QR[name]]] = ["30", "20", "10"]
-        expected[name] = pd.concat([frame, next_day], ignore_index=True)
-    run("next_day", day="0")
-    assert_outputs(output, expected)
-    run("all_higher", day="1")
-    assert_outputs(output, expected)
-    assert not (output / "discrepancies/anomaly_log.jsonl").exists()
-
-
-def test_successful_retry_preserves_the_anomaly_log(scenario):
-    output, run = scenario
-    run("mixed", day="0", exit_code=2)
-    log = output / "discrepancies/anomaly_log.jsonl"
-    original_log = log.read_bytes()
-    expected = read_outputs(output)
-    for name, frame in expected.items():
-        frame.loc[target(frame, name), ["Total", CARDS[name], QR[name]]] = ["180", "120", "60"]
-    run("all_higher", day="0")
-    assert_outputs(output, expected)
-    assert log.read_bytes() == original_log
-
-
-def test_bad_row_does_not_block_other_updates_or_new_keys(scenario, cases):
-    output, run = scenario
-    payload = copy.deepcopy(cases["mixed"])
-    payload["hourly"]["categories"] += [f"{DATE}T11:00:00", f"{DATE}T12:00:00"]
-    for series in payload["hourly"]["series"]:
-        series["data"] += {"Total": [100, 40], "Paper QR": [30, 15], "Singara Chennai Card": [70, 25]}[series["name"]]
-    payload["station"][0]["categories"].append("GUINDY")
-    for series in payload["station"][0]["series"]:
-        series["data"].append({"Total": 100, "Paper QR": 30, "Singara Chennai Card": 70}[series["name"]])
-    payload["station"].append({"line": "02", "categories": ["CENTRAL  METRO", "ALANDUR"], "series": [
-        {"name": "Total", "data": [90, 25]},
-        {"name": "Paper QR", "data": [30, 10]},
-        {"name": "Singara Chennai Card", "data": [60, 15]},
-    ]})
-    expected = read_outputs(output)
-    hourly = expected["hourly"]
-    hourly.loc[(hourly["Date"] == DATE) & (hourly["Hour"] == "11:00"),
-               ["Total", "Paper QR", "Singara Chennai Card"]] = ["100", "30", "70"]
-    expected["hourly"] = pd.concat([hourly, pd.DataFrame([
-        {"Date": DATE, "Hour": "12:00", "Total": "40", "Paper QR": "15", "Singara Chennai Card": "25"},
-    ])], ignore_index=True)
-    station = expected["station"]
-    for line, code, values in (("01", "SGU", ["100", "30", "70"]), ("02", "SCC", ["90", "30", "60"])):
-        mask = (station["Date"] == DATE) & (station["Line"] == line) & (station["Station"] == code)
-        station.loc[mask, ["Total", "Paper QR", "Singara Chennai Card"]] = values
-    expected["station"] = pd.concat([station, pd.DataFrame([
-        {"Date": DATE, "Line": "02", "Station": "SAL", "Total": "25", "Paper QR": "10", "Singara Chennai Card": "15"},
-    ])], ignore_index=True)
-    for _ in range(2):
-        run("mixed", day="0", exit_code=2, payload=payload)
-        assert_outputs(output, expected)
-    records = (output / "discrepancies/anomaly_log.jsonl").read_text(encoding="utf-8").splitlines()
-    assert all(len(json.loads(record)["anomalies"]) == 3 for record in records)
+def test_retry_capture_cannot_move_behind_the_publication_watermark(
+        snapshot_bundle, collect_snapshot, tmp_path, monkeypatch):
+    collect_snapshot(snapshot_bundle)
+    before = csv_bytes(tmp_path)
+    newer_bad = changed_counts(snapshot_bundle, 6)
+    payload(newer_bad, "allTicketCount")["totalTickets"] += 1
+    older_good = changed_counts(snapshot_bundle, 4)
+    older_good["recorded_at_utc"] = "2026-11-07T03:00:00+00:00"
+    monkeypatch.setattr(ridership, "sleep", lambda _: (tmp_path / "input.json").write_text(json.dumps(older_good)))
+    result = collect_snapshot(newer_bad)
+    assert result.exit_code == 2 and not result.published
+    assert any(f["code"] == "stale_capture" for f in result.findings)
+    assert csv_bytes(tmp_path) == before
