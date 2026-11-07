@@ -234,6 +234,17 @@ def test_group_write_failure_restores_original_snapshot(phase, snapshot_bundle, 
     assert not list((tmp_path / "output").rglob("*.tmp"))
 
 
+def test_publication_log_failure_restores_the_csv_snapshot(snapshot_bundle, collect_snapshot, tmp_path, monkeypatch):
+    collect_snapshot(snapshot_bundle)
+    before = {**csv_bytes(tmp_path), log(tmp_path): log(tmp_path).read_bytes()}
+    def fail(*args, **kwargs):
+        raise OSError("log write failed")
+    monkeypatch.setattr(ridership, "append_jsonl", fail)
+    with pytest.raises(OSError, match="log write failed"):
+        collect_snapshot(changed_counts(snapshot_bundle, 4))
+    assert {path: path.read_bytes() for path in before} == before
+
+
 def test_group_write_rolls_back_new_files(tmp_path, monkeypatch):
     original = Path.replace
     calls = []

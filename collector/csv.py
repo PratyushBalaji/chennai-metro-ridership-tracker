@@ -31,8 +31,8 @@ def write_csv_atomic(path, dataframe):
         temporary.unlink(missing_ok=True)
 
 
-def write_csv_group(outputs):
-    """Stage a snapshot before replacement; restore replaced files on failure."""
+def write_csv_group(outputs, after_write=None):
+    """Restore the snapshot if replacement or its publication-log step fails."""
     originals, staged, replaced = {}, {}, []
     try:
         for raw_path, dataframe in outputs:
@@ -46,6 +46,8 @@ def write_csv_group(outputs):
         for path, temporary in staged.items():
             temporary.replace(path)
             replaced.append(path)
+        if after_write is not None:
+            after_write()
     except BaseException:
         for path in reversed(replaced):
             content = originals[path]

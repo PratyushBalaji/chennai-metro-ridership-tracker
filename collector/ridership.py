@@ -539,8 +539,7 @@ def collect_ridership(day="1", output_dir="data", dry_run=False, anomaly_log=ANO
     if not first.valid or reductions:
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + "-" + uuid4().hex[:8]
         result.raw_paths = [_archive_snapshot(item, output_dir, run_id, i) for i, item in enumerate(attempts, 1)]
-    if changed:
-        write_csv_group(outputs)
+    record = None
     if changed or promotion or not selected or findings or revisions:
         record = build_log_record(source="ridership", day=day, dataset_date=first.date, status=status,
                                   reason="snapshot_validation" if findings else "snapshot_publication",
@@ -552,6 +551,9 @@ def collect_ridership(day="1", output_dir="data", dry_run=False, anomaly_log=ANO
             "findings": findings, "payload_paths": result.raw_paths,
             "attempts": [{"captured_at_utc": item.captured_at.isoformat(), "findings": item.findings} for item in attempts],
         })
+    if changed:
+        write_csv_group(outputs, after_write=lambda: append_jsonl(log_path, record))
+    elif record is not None:
         append_jsonl(log_path, record)
     print(f"ridership {first.date}: {status}, {len(findings)} findings, {len(revisions)} revised rows")
     return result

@@ -111,13 +111,20 @@ def build_log_record(
 
 def append_jsonl(path: str | Path, record: dict[str, Any]) -> None:
     log_path = Path(path)
+    data = (json.dumps(_json_value(record), ensure_ascii=True, sort_keys=True) + "\n").encode("utf-8")
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a+b") as file:
-        if file.tell():
+    with log_path.open("a+b", buffering=0) as file:
+        original_size = file.tell()
+        if original_size:
             file.seek(-1, 2)
             if file.read(1) != b"\n":
-                file.write(b"\n")
-        file.write((json.dumps(_json_value(record), ensure_ascii=True, sort_keys=True) + "\n").encode("utf-8"))
+                data = b"\n" + data
+        try:
+            if file.write(data) != len(data):
+                raise OSError("Incomplete anomaly-log write")
+        except BaseException:
+            file.truncate(original_size)
+            raise
 
 
 def read_last_record(path: str | Path, *, source: str | None = None, day: str | None = None,

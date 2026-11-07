@@ -34,6 +34,27 @@ def test_append_keeps_unterminated_final_record_separate(ending, tmp_path):
     assert [json.loads(line) for line in path.read_text().splitlines()] == [first, second]
 
 
+@pytest.mark.parametrize("failure", ("raise", "short_write"))
+def test_failed_append_removes_partial_record(failure, tmp_path):
+    path = tmp_path / "anomaly_log.jsonl"
+    before = b'{"status":"published_final"}'
+    path.write_bytes(before)
+    with path.open("a+b", buffering=0) as file:
+        tracked = MagicMock(wraps=file)
+        tracked.__enter__.return_value = tracked
+        def fail(data):
+            written = max(1, len(data) // 2)
+            file.write(data[:written])
+            if failure == "raise":
+                raise OSError("log write failed")
+            return written
+        tracked.write.side_effect = fail
+        with patch.object(Path, "open", return_value=tracked):
+            with pytest.raises(OSError):
+                append_jsonl(path, {"status": "published_provisional"})
+    assert path.read_bytes() == before
+
+
 def test_filtered_tail_stops_at_latest_terminal_record(tmp_path):
     path = tmp_path / "anomaly_log.jsonl"
     for status in ("pending_retry", "resolved"):
