@@ -36,7 +36,7 @@ jobs:
           python -m collector.phpdt
           --api-response tests/fixtures/api/day1.json
           --output-dir "$RUNNER_TEMP/phpdt-cli"
-      - name: Run collector benchmark
+      - name: Run collector tests
         run: >-
           python -m pytest
           --cov=collector --cov-report=term-missing --cov-report=xml

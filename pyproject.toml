@@ -16,6 +16,7 @@ test = [
     "responses>=0.25,<1",
     "pytest-socket>=0.7,<1",
     "pytest-cov>=6,<8",
+    "PyYAML>=6,<7",
 ]
 notebook = ["matplotlib", "plotly", "seaborn", "nbformat", "folium"]
 
@@ -26,6 +27,7 @@ packages = ["collector"]
 testpaths = ["tests"]
 cache_dir = ".cache/pytest"
 addopts = "--disable-socket -ra --basetemp=.cache/pytest-tmp --junitxml=.cache/reports/junit.xml"
+markers = ["idempotence: strict upsert and replay behaviour"]
 
 [tool.coverage.run]
 branch = true

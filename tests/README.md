@@ -24,7 +24,7 @@ contract.
 these to cover incoming dates before, on and after the latest stored date.
 Existing rows must survive and a repeat of the latest payload must not add
 duplicates. The benchmark also checks empty CSVs and parking's `DATASET_DATE`
-workflow input.
+override.
 
 All three collectors accept the same fixed responses directly from the command line:
 
@@ -39,11 +39,11 @@ This writes CSVs under `test-output/ridership/`, `test-output/parking/` and
 Without `--output-dir`, they use the output folders under `data/`. The CLI tests run
 the collector modules with these flags, compare the CSVs and verify that no HTTP
 calls happened. Parking's date fallback also reads from the JSON file;
-`DATASET_DATE` still takes precedence when supplied by the workflow.
+`DATASET_DATE` still takes precedence when supplied.
 
-This does not require live counts to increase, reject regressions, check mixed
-rows or implement arbitrary historical replay. Those are tests for the next
-spec. The original scripts only skip when the API date equals the last CSV row.
+The original benchmark does not require live counts to increase, reject regressions, check mixed
+rows or implement arbitrary historical replay. Those are covered by the strict
+upsert tests below. The original scripts only skip when the API date equals the last CSV row.
 
 To explicitly record a replacement response bundle:
 
@@ -59,3 +59,40 @@ GitHub Actions first runs each collector module with `--api-response` and
 CSVs, JUnit results and coverage report (under `.cache/reports/`) are uploaded. The original functionality has 19 benchmark tests,
 plus 13 tests for the file-input CLI. This is a
 regression benchmark, not a guarantee about future CMRL availability.
+
+## strict upsert tests
+
+```sh
+python -m pytest -m idempotence
+```
+
+`test_ridership_idempotence.py` runs the current collector module through its CLI
+using synthetic JSON in `fixtures/idempotence/cases.json` and prefilled CSVs.
+The cases check equal rows, increases, decreases, mixed values, missing values,
+blank backfills, historical inserts, live growth, final replays and next-day
+inserts. They also check exit code 2, both anomaly statuses, UTC/IST timestamps,
+append-only logs and row-level rejection while other keys update normally.
+
+`test_upsert_control_flow.py` additionally checks all 27 lower/equal/higher
+combinations across three numeric columns. Any decrease rejects the whole row;
+otherwise increases update it and an identical row is a noop.
+
+These tests exercise ridership's strict behavior. `test_collectors.py` also
+checks parking's strict upsert and PHPDT's insert/backfill-only policy.
+CI automatically includes the new tests in its full pytest run.
+
+## retries
+
+`python -m collector.ridership --retry` owns the retry flow. It checks the latest ridership /0 log
+record, waits 15 minutes when needed, collects live data when due, and appends
+`resolved` or `expired`. Retries expire at 23:50 IST or when their IST day ends.
+The returned date must match the pending record before any CSV writes.
+Empty hourly timestamps leave CSVs alone and exit 2: live data is pending retry,
+while yesterday's data needs review. Dry runs never write CSVs or logs.
+All collection workflows commit accepted CSV updates alongside
+the anomaly log before rebasing, then report the collector's exit code.
+Daily `/1` runs collect parking independently of ridership. Each collector's
+CSV updates are committed only for exit `0` or `2`; exit `1` discards its partial
+CSV writes in the runner and takes priority in the final workflow result.
+Previously flagged keys must return and pass comparison before a retry resolves.
+Omitted keys stay pending across partial responses, unavailable payloads and date mismatches.

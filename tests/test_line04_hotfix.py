@@ -12,7 +12,9 @@ from pandas.testing import assert_frame_equal
 import pytest
 import requests
 
-from collector.csv import append_csv, normalize_parking_columns, read_csv, write_csv_atomic
+from collector.csv import read_csv, write_csv_atomic
+from collector.schemas import PARKING_STATION, RIDERSHIP_STATION
+from collector.upsert import normalize_columns, upsert_rows
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -88,7 +90,7 @@ def test_new_mode_on_only_one_line_is_not_dropped(tmp_path, run_collector, new_b
 
 @pytest.mark.parametrize("legacy,current,expected", [("", "", ""), ("2", "", "2"), ("", "3", "3"), ("2", "2.0", "2.0"), (None, "0", "0")])
 def test_parking_alias_coalescing(legacy, current, expected):
-    result = normalize_parking_columns(pd.DataFrame([{"Eight Wheleer": legacy, "Eight Wheeler": current}]))
+    result = normalize_columns(pd.DataFrame([{"Eight Wheleer": legacy, "Eight Wheeler": current}]), PARKING_STATION)
     assert result.to_dict("records") == [{"Eight Wheeler": expected}]
 
 
@@ -104,7 +106,7 @@ def test_parking_alias_conflict_leaves_all_csvs_unchanged(side, tmp_path, run_co
         line = new_bundle["responses"][API + "parkingdashboard/stationData/1"][0]
         line["series"].append({"name": "Eight Wheleer", "data": [1] * len(line["categories"])})
     before = {name: (output / name).read_bytes() for name in FILES["parking"]}
-    with pytest.raises(ValueError, match="Conflicting Eight Wheleer"):
+    with pytest.raises(ValueError, match="conflicting values.*Eight Wheleer"):
         run_collector("parking", "--api-response", response_file(tmp_path, new_bundle), "--output-dir", output)
     assert before == {name: (output / name).read_bytes() for name in FILES["parking"]}
 
@@ -125,9 +127,9 @@ def test_phpdt_empty_yellow_routes_then_same_day_completion(tmp_path, run_collec
     path = response_file(tmp_path, new_bundle)
     run_collector("phpdt", "--api-response", path, "--output-dir", output)
     actual = read_csv(filename)
-    assert_frame_equal(actual.iloc[:82].reset_index(drop=True), old)
+    assert_frame_equal(actual.loc[actual["Line"] != "04"].reset_index(drop=True), old)
     yellow = actual.loc[actual["Line"] == "04"]
-    assert yellow[["Direction", "Start Station", "End Station", "PHPDT"]].to_dict("records") == [
+    assert yellow.sort_values("Direction", ascending=False)[["Direction", "Start Station", "End Station", "PHPDT"]].to_dict("records") == [
         {"Direction": "UP", "Start Station": "POB", "End Station": "SVA", "PHPDT": "100"},
         {"Direction": "DOWN", "Start Station": "SVA", "End Station": "POB", "PHPDT": "100"},
     ]
@@ -161,11 +163,11 @@ def test_phpdt_duplicate_corridors_stop_before_writing(tmp_path, run_collector, 
     assert filename.read_bytes() == before
 
 
-def test_append_aligns_columns_and_only_backfills_requested_column(tmp_path):
+def test_upsert_aligns_columns_and_only_backfills_requested_column(tmp_path):
     path = tmp_path / "data.csv"
     old = pd.DataFrame([{"Date": "2026-10-12", "Line": "04", "Uber": "12", "Other": ""}])
     incoming = pd.DataFrame([{"UTP QR": 0, "Uber": 15, "Date": "2026-10-13", "Line": "04", "Other": ""}])
-    append_csv(path, old, incoming, zero_columns=("UTP QR",))
+    write_csv_atomic(path, upsert_rows(old.assign(Station="POB"), incoming.assign(Station="POB"), RIDERSHIP_STATION, zero_columns=("UTP QR",)).dataframe.drop(columns="Station"))
     assert read_csv(path).to_dict("records") == [
         {"Date": "2026-10-12", "Line": "04", "Uber": "12", "Other": "", "UTP QR": "0"},
         {"Date": "2026-10-13", "Line": "04", "Uber": "15", "Other": "", "UTP QR": "0"},
@@ -237,13 +239,13 @@ def test_november_phpdt_exact_values_suffixes_and_repeat(tmp_path, run_collector
     first = path.read_bytes()
     frame = read_csv(path)
     assert len(frame) == 102
-    assert_frame_equal(frame.iloc[:82].reset_index(drop=True), original)
+    assert_frame_equal(frame.loc[frame["Line"] != "04"].reset_index(drop=True), original)
     yellow = frame.loc[frame["Line"] == "04"]
     for direction, stations, counts, start, end in [
         ("UP", stations, [387,589,700,845,990,1081,1218,1210,1209,1320], "09:00", "10:00"),
         ("DOWN", stations[::-1], [1733,1535,1546,1535,1344,1211,1020,634,445,306], "19:00", "20:00"),
     ]:
-        rows = yellow.loc[yellow["Direction"] == direction]
+        rows = yellow.loc[yellow["Direction"] == direction].set_index("Start Station").loc[stations[:-1]].reset_index()
         assert list(zip(rows["Start Station"], rows["End Station"])) == list(zip(stations, stations[1:]))
         assert rows["PHPDT"].tolist() == list(map(str, counts))
         assert set(rows["Date"]) == {"2026-11-04"}

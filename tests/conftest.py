@@ -35,6 +35,7 @@ def run_collector(monkeypatch, tmp_path):
         if "--output-dir" not in args:
             args = (*args, "--output-dir", tmp_path)
         monkeypatch.setattr(sys, "argv", [f"collector.{name}", *map(str, args)])
+        monkeypatch.delitem(sys.modules, f"collector.{name}", raising=False)
         runpy.run_module(f"collector.{name}", run_name="__main__")
     return run
 
