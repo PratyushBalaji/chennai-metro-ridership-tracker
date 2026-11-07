@@ -15,7 +15,7 @@ from collector.anomalies import (
     read_last_record, retry_decision,
 )
 from collector.schemas import RIDERSHIP_DAILY, RIDERSHIP_HOURLY, RIDERSHIP_STATION
-from collector.upsert import UpsertResult, read_csv, upsert_rows, write_csv_atomic
+from collector.upsert import CellConflict, RowDecision, UpsertResult, read_csv, upsert_rows, write_csv_atomic
 
 
 DAILY_FILENAME = "ridership/ChennaiMetro_Daily_Ridership.csv"
@@ -168,6 +168,9 @@ def collect_ridership(
     api_response: str | Path | None = None,
     expected_date: str | None = None,
 ) -> list[UpsertResult]:
+    log_path = _resolve_output_path(output_dir, anomaly_log)
+    previous = read_last_record(log_path, source="ridership", day="0") if day == "0" else None
+    pending = previous.get("anomalies", []) if previous and previous.get("status") == "pending_retry" else []
     daily_payload, hourly_payload, station_payload = fetch_ridership_payloads(day, api_response)
     try:
         date = extract_dataset_date(hourly_payload)
@@ -191,7 +194,9 @@ def collect_ridership(
             if expected_date is None:
                 ist_date = datetime.fromisoformat(record["ist_timestamp"]).date()
                 record["date"] = (ist_date - timedelta(days=int(day))).isoformat()
-            append_jsonl(_resolve_output_path(output_dir, anomaly_log), record)
+            if previous and previous["date"] == record["date"]:
+                record["anomalies"] = pending
+            append_jsonl(log_path, record)
         raise PayloadUnavailableError(problem)
 
     datasets = [
@@ -208,6 +213,18 @@ def collect_ridership(
 
         column = "noOfUTPQR" if schema == RIDERSHIP_DAILY else "UTP QR"
         result = upsert_rows(read_csv(path), dataframe, schema, zero_columns=(column,))
+        # An omitted flagged key was not rechecked, even if other rows pass.
+        if previous and previous["date"] == date:
+            returned_keys = {tuple(decision.key[key] for key in schema.key_columns) for decision in result.decisions}
+            for anomaly in pending:
+                if anomaly["dataset"] != schema.name:
+                    continue
+                key = anomaly["key"]
+                if tuple(key[column] for column in schema.key_columns) not in returned_keys:
+                    result.decisions.append(RowDecision(
+                        schema.name, key, "anomaly",
+                        conflicts=[CellConflict("__row__", "previously flagged", None, "incoming_row_missing")],
+                    ))
         results.append(result)
         print(_format_result(schema.name, date, result))
 
@@ -216,7 +233,6 @@ def collect_ridership(
         write_csv_atomic(path, result.dataframe)
 
     if results and has_anomalies(results):
-        log_path = _resolve_output_path(output_dir, anomaly_log)
         append_anomaly_record(
             log_path,
             source="ridership",

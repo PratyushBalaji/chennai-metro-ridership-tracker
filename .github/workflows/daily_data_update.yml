@@ -63,7 +63,7 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
       - name: Run parking
         id: parking
-        if: env.DAY_SELECTOR == '1' && steps.ridership.outputs.exit_code == '0'
+        if: env.DAY_SELECTOR == '1'
         run: |
           set +e
           python -m collector.parking
@@ -71,11 +71,22 @@ jobs:
           set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
       - name: Commit and push data
-        if: (steps.ridership.outputs.exit_code == '0' || steps.ridership.outputs.exit_code == '2') && (steps.parking.outputs.exit_code == '' || steps.parking.outputs.exit_code == '0' || steps.parking.outputs.exit_code == '2')
+        if: steps.ridership.outputs.exit_code == '0' || steps.ridership.outputs.exit_code == '2' || steps.parking.outputs.exit_code == '0' || steps.parking.outputs.exit_code == '2'
+        env:
+          RIDERSHIP_EXIT: ${{ steps.ridership.outputs.exit_code }}
+          PARKING_EXIT: ${{ steps.parking.outputs.exit_code }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/ridership/ data/parking/
+          # Discard partial CSV writes from failed collectors in this runner.
+          case "$RIDERSHIP_EXIT" in
+            0|2) git add data/ridership/ ;;
+            *) git restore --worktree -- data/ridership/ ;;
+          esac
+          case "$PARKING_EXIT" in
+            0|2) git add data/parking/ ;;
+            *) git restore --worktree -- data/parking/ ;;
+          esac
           if [ -d data/discrepancies ]; then git add data/discrepancies/; fi
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "chore(data): update daily data"
@@ -83,5 +94,10 @@ jobs:
           git push origin HEAD:"$BRANCH_NAME"
       - name: Report collection result
         env:
-          EXIT_CODE: ${{ steps.ridership.outputs.exit_code != '0' && steps.ridership.outputs.exit_code || steps.parking.outputs.exit_code || '0' }}
-        run: exit "$EXIT_CODE"
+          RIDERSHIP_EXIT: ${{ steps.ridership.outputs.exit_code }}
+          PARKING_EXIT: ${{ steps.parking.outputs.exit_code }}
+        run: |
+          for code in "$RIDERSHIP_EXIT" "${PARKING_EXIT:-0}"; do
+            if [ "$code" != '0' ] && [ "$code" != '2' ]; then exit "$code"; fi
+          done
+          if [ "$RIDERSHIP_EXIT" = '2' ] || [ "$PARKING_EXIT" = '2' ]; then exit 2; fi

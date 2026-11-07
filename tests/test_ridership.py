@@ -155,6 +155,70 @@ def test_other_log_records_do_not_hide_live_retry(source, day, retry_files, tmp_
     assert len(log.read_text().splitlines()) == 3
 
 
+@pytest.mark.parametrize("missing", ("empty_station", "other_station", "other_hour"))
+@pytest.mark.parametrize("retry", (False, True))
+def test_omitted_flagged_keys_stay_pending_until_returned(missing, retry, retry_files, tmp_path, run_collector):
+    output, cases, log, _ = retry_files
+    with patch.object(anomaly_helpers, "datetime", wraps=datetime) as clock:
+        clock.now.return_value = datetime(2026, 6, 15, 11, 40, tzinfo=timezone.utc)
+        with pytest.raises(SystemExit) as error:
+            run_collector("ridership", "--day", "0", "--api-response",
+                          response_file(tmp_path, cases["mixed"], "0"), "--output-dir", output)
+        assert error.value.code == 2
+        original_log = log.read_bytes()
+        payload = copy.deepcopy(cases["all_higher"])
+        if missing == "empty_station":
+            payload["station"] = []
+        elif missing == "other_station":
+            payload["station"][0]["categories"] = ["GUINDY"]
+        else:
+            payload["hourly"]["categories"] = ["2026-06-15T11:00:00"]
+        mode = ("--retry",) if retry else ("--day", "0")
+        for minute in (0, 20):
+            clock.now.return_value = datetime(2026, 6, 15, 12, minute, tzinfo=timezone.utc)
+            with pytest.raises(SystemExit) as error:
+                run_collector("ridership", *mode, "--api-response",
+                              response_file(tmp_path, payload, "0"), "--output-dir", output)
+            assert error.value.code == 2
+            record = anomaly_helpers.read_last_record(log)
+            assert record["status"] == "pending_retry"
+            assert len(record["anomalies"]) == 1
+            anomaly = record["anomalies"][0]
+            assert anomaly["details"][0]["reason"] == "incoming_row_missing"
+            if missing == "other_hour":
+                assert anomaly["key"] == {"Date": "2026-06-15", "Hour": "10:00"}
+            else:
+                assert anomaly["key"] == {"Date": "2026-06-15", "Line": "01", "Station": "SCC"}
+            assert pd.read_csv(output / ridership.DAILY_FILENAME).iloc[1]["Total"] == 180
+        clock.now.return_value = datetime(2026, 6, 15, 12, 40, tzinfo=timezone.utc)
+        run_collector("ridership", "--retry", "--api-response",
+                      response_file(tmp_path, cases["all_higher"], "0"), "--output-dir", output)
+    assert anomaly_helpers.read_last_record(log)["status"] == "resolved"
+    assert log.read_bytes().startswith(original_log)
+
+
+@pytest.mark.parametrize("interruption", ("empty_hourly", "next_day", "mixed"))
+def test_retry_carries_omitted_keys_through_other_anomalies(interruption, retry_files, tmp_path, run_collector):
+    output, cases, log, _ = retry_files
+    flagged = {"dataset": "ridership_station", "key": {"Date": "2026-06-15", "Line": "01", "Station": "SCC"},
+               "action": "anomaly", "details": []}
+    previous = anomaly_helpers.read_last_record(log)
+    previous["anomalies"] = [flagged]
+    log.write_text(json.dumps(previous) + "\n")
+    payload = copy.deepcopy(cases[interruption])
+    payload["station"] = []
+    with patch.object(anomaly_helpers, "datetime", wraps=datetime) as clock:
+        for hour, minute, response in ((12, 0, payload), (12, 20, {**cases["all_higher"], "station": []})):
+            clock.now.return_value = datetime(2026, 6, 15, hour, minute, tzinfo=timezone.utc)
+            with pytest.raises(SystemExit) as error:
+                run_collector("ridership", "--retry", "--api-response",
+                              response_file(tmp_path, response, "0"), "--output-dir", output)
+            assert error.value.code == 2
+            record = anomaly_helpers.read_last_record(log)
+            assert any(anomaly["key"] == flagged["key"] for anomaly in record["anomalies"])
+            assert record["status"] == "pending_retry"
+
+
 def test_invalid_station_keys_do_not_partially_write_ridership(tmp_path):
     _write_existing_ridership(tmp_path, total=100, card=50)
     before = {path: path.read_bytes() for path in tmp_path.rglob("*.csv")}

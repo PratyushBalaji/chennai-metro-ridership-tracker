@@ -91,3 +91,8 @@ Empty hourly timestamps leave CSVs alone and exit 2: live data is pending retry,
 while yesterday's data needs review. Dry runs never write CSVs or logs.
 All collection workflows commit accepted CSV updates alongside
 the anomaly log before rebasing, then report the collector's exit code.
+Daily `/1` runs collect parking independently of ridership. Each collector's
+CSV updates are committed only for exit `0` or `2`; exit `1` discards its partial
+CSV writes in the runner and takes priority in the final workflow result.
+Previously flagged keys must return and pass comparison before a retry resolves.
+Omitted keys stay pending across partial responses, unavailable payloads and date mismatches.

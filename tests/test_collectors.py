@@ -334,9 +334,10 @@ def test_workflows_share_branch_lock_and_collector_requirements():
         assert "== '0'" in commit["if"] and "== '2'" in commit["if"]
         if workflow == "daily_data_update.yml":
             assert "steps.parking.outputs.exit_code" in commit["if"]
-            assert "steps.parking.outputs.exit_code" in steps[-1]["env"]["EXIT_CODE"]
-            parking = next(step["run"] for step in steps if step.get("name") == "Run parking")
-            assert "DATASET_DATE" not in parking
+            assert steps[-1]["env"]["PARKING_EXIT"] == "${{ steps.parking.outputs.exit_code }}"
+            parking = next(step for step in steps if step.get("name") == "Run parking")
+            assert parking["if"] == "env.DAY_SELECTOR == '1'"
+            assert "DATASET_DATE" not in parking["run"]
     import tomllib
     config = tomllib.loads((root / "pyproject.toml").read_text())
     assert set(config["project"]["dependencies"]) == {"pandas", "requests"}
@@ -531,7 +532,7 @@ def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tm
     document = yaml.safe_load((root / ".github/workflows" / workflow).read_text())
     steps = next(iter(document["jobs"].values()))["steps"]
     commit_step = next(step for step in steps if step.get("name") == "Commit and push data")
-    env = {**os.environ, "BRANCH_NAME": branch}
+    env = {**os.environ, "BRANCH_NAME": branch, "RIDERSHIP_EXIT": "2", "PARKING_EXIT": ""}
     for _ in range(2):
         result = subprocess.run([bash, "-e", "-c", commit_step["run"]], cwd=runner,
                                 env=env, capture_output=True, text=True, timeout=30)
@@ -551,6 +552,61 @@ def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tm
     reported = subprocess.run([bash, "-e", "-c", report_step["run"]], cwd=runner,
                               env={**env, "EXIT_CODE": "2"}, capture_output=True, text=True, timeout=30)
     assert reported.returncode == 2
+
+
+@pytest.mark.parametrize("ridership_code", (0, 1, 2))
+@pytest.mark.parametrize("parking_code", (0, 1, 2))
+def test_daily_workflow_saves_each_collector_independently(ridership_code, parking_code, tmp_path):
+    git = shutil.which("git")
+    bash = str(Path(git).parent.parent / "bin/bash.exe") if os.name == "nt" and git else shutil.which("bash")
+    if not git or not bash or not Path(bash).exists():
+        pytest.skip("git and bash are required for workflow tests")
+
+    def command(*args, cwd=tmp_path):
+        result = subprocess.run([git, *map(str, args)], cwd=cwd, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    origin, runner = tmp_path / "origin.git", tmp_path / "runner"
+    runner.mkdir()
+    command("init", "--bare", "-b", "main", origin)
+    command("init", "-b", "main", cwd=runner)
+    command("config", "user.name", "test", cwd=runner)
+    command("config", "user.email", "test@example.com", cwd=runner)
+    files = {name: runner / "data" / FILES[name][0] for name in ("ridership", "parking")}
+    for path in files.values():
+        path.parent.mkdir(parents=True)
+        path.write_text("Date,Total\n2026-06-15,100\n")
+    command("add", ".", cwd=runner)
+    command("commit", "-m", "test: seed csvs", cwd=runner)
+    command("remote", "add", "origin", origin, cwd=runner)
+    command("push", "-u", "origin", "main", cwd=runner)
+
+    codes = {"ridership": ridership_code, "parking": parking_code}
+    for name, path in files.items():
+        # Exit 1 may leave a partially written CSV; it must not be published.
+        path.write_text(f"Date,Total\n2026-06-15,{999 if codes[name] == 1 else 150}\n")
+    log = runner / "data/discrepancies/anomaly_log.jsonl"
+    log.parent.mkdir()
+    log.write_text('{"status":"needs_review"}\n')
+    root = Path(__file__).resolve().parents[1]
+    steps = yaml.safe_load((root / ".github/workflows/daily_data_update.yml").read_text())["jobs"]["update-data"]["steps"]
+    commit = next(step for step in steps if step.get("name") == "Commit and push data")
+    env = {**os.environ, "BRANCH_NAME": "main", "RIDERSHIP_EXIT": str(ridership_code), "PARKING_EXIT": str(parking_code)}
+    if any(code in (0, 2) for code in codes.values()):
+        result = subprocess.run([bash, "-e", "-c", commit["run"]], cwd=runner,
+                                env=env, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+        assert command("status", "--porcelain", cwd=runner) == ""
+        assert json.loads(command("--git-dir", origin, "show", "main:data/discrepancies/anomaly_log.jsonl"))["status"] == "needs_review"
+    for name, path in files.items():
+        published = command("--git-dir", origin, "show", "main:" + path.relative_to(runner).as_posix())
+        expected = 100 if codes[name] == 1 else 150
+        assert published == f"Date,Total\n2026-06-15,{expected}"
+    result = subprocess.run([bash, "-e", "-c", steps[-1]["run"]], cwd=runner,
+                            env=env, capture_output=True, text=True, timeout=30)
+    expected_code = 1 if 1 in codes.values() else 2 if 2 in codes.values() else 0
+    assert result.returncode == expected_code, result.stderr
 
 
 def legacy_fixture_path(filename):
