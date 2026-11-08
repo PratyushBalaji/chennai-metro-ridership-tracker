@@ -37,7 +37,7 @@ def response_file(tmp_path, bundle):
     return path
 
 
-@pytest.mark.parametrize("script", ["ridership", "parking"])
+@pytest.mark.parametrize("script", ["parking"])
 @pytest.mark.parametrize("day,date", [("0", "2026-10-15"), ("1", "2026-10-14")])
 def test_new_responses_preserve_old_columns_and_replay(script, day, date, tmp_path, run_collector, http_mock, new_bundle, monkeypatch):
     output = tmp_path / "output"
@@ -82,8 +82,8 @@ def test_new_responses_preserve_old_columns_and_replay(script, day, date, tmp_pa
 def test_new_mode_on_only_one_line_is_not_dropped(tmp_path, run_collector, new_bundle):
     payload = new_bundle["responses"][API + "PassengerFlow/stationData/1"]
     payload[2]["series"].append({"name": "Future QR", "data": [7] * 11})
-    run_collector("ridership", "--api-response", response_file(tmp_path, new_bundle))
-    station = read_csv(tmp_path / FILES["ridership"][2])
+    from collector.ridership import normalize_station
+    station = normalize_station(payload, "2026-10-14").fillna("").astype(str)
     assert set(station.loc[station["Line"] == "04", "Future QR"]) == {"7"}
     assert set(station.loc[station["Line"] != "04", "Future QR"]) == {""}
 
@@ -215,7 +215,7 @@ def test_root_cli_without_inherited_pythonpath(script, tmp_path):
     root = Path(__file__).resolve().parents[1]
     env = {key: value for key, value in os.environ.items() if not key.startswith("PYTHON") and key != "DATASET_DATE"}
     result = subprocess.run([sys.executable, "-E", "-m", f"collector.{script}",
-                             "--api-response", str(FIXTURES / "api/line04.json"),
+                             "--api-response", str(FIXTURES / "api" / ("consistent_ridership.json" if script == "ridership" else "line04.json")),
                              "--output-dir", str(tmp_path / "output")],
                             cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr

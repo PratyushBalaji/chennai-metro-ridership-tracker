@@ -34,12 +34,42 @@ def test_append_keeps_unterminated_final_record_separate(ending, tmp_path):
     assert [json.loads(line) for line in path.read_text().splitlines()] == [first, second]
 
 
+@pytest.mark.parametrize("failure", ("raise", "short_write"))
+def test_failed_append_removes_partial_record(failure, tmp_path):
+    path = tmp_path / "anomaly_log.jsonl"
+    before = b'{"status":"published_final"}'
+    path.write_bytes(before)
+    with path.open("a+b", buffering=0) as file:
+        tracked = MagicMock(wraps=file)
+        tracked.__enter__.return_value = tracked
+        def fail(data):
+            written = max(1, len(data) // 2)
+            file.write(data[:written])
+            if failure == "raise":
+                raise OSError("log write failed")
+            return written
+        tracked.write.side_effect = fail
+        with patch.object(Path, "open", return_value=tracked):
+            with pytest.raises(OSError):
+                append_jsonl(path, {"status": "published_provisional"})
+    assert path.read_bytes() == before
+
+
 def test_filtered_tail_stops_at_latest_terminal_record(tmp_path):
     path = tmp_path / "anomaly_log.jsonl"
     for status in ("pending_retry", "resolved"):
         append_jsonl(path, {"source": "ridership", "day": "0", "status": status})
     append_jsonl(path, {"source": "parking", "day": "1", "status": "needs_review"})
     assert read_last_record(path, source="ridership", day="0")["status"] == "resolved"
+
+
+def test_publication_lookup_skips_other_dates_and_nonpublication_events(tmp_path):
+    path = tmp_path / "anomaly_log.jsonl"
+    target = {"source": "ridership", "day": "1", "date": "2026-11-06", "status": "published_final"}
+    for record in (target, {**target, "date": "2026-11-07"}, {**target, "status": "needs_review"}):
+        append_jsonl(path, record)
+    assert read_last_record(path, source="ridership", dataset_date="2026-11-06",
+                            statuses=("published_final", "published_provisional")) == target
 
 
 @pytest.mark.parametrize("status", ("resolved", "expired", "needs_review"))

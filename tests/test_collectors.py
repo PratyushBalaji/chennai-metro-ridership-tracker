@@ -39,6 +39,7 @@ def read_csv(path):
 
 
 def canonical(frame):
+    frame = frame.fillna("")
     keys = [column for column in frame.columns if column in (
         "Date", "Line", "Direction", "Hour", "Station", "Start Hour",
         "End Hour", "Start Station", "End Station",
@@ -47,14 +48,23 @@ def canonical(frame):
 
 
 def expected_csv(filename, seed=False):
-    # Only the declared parking header migration changes benchmark output.
-    if filename == FILES["parking"][2]:
+    # Captured ridership responses remain negative cases; success uses a complete snapshot.
+    if filename in FILES["ridership"] and not seed:
+        folder = FIXTURES / "snapshot_expected"
+    elif filename == FILES["parking"][2]:
         folder = FIXTURES / "canonical"
         if seed:
             folder /= "seed"
     else:
         folder = FIXTURES / ("seed" if seed else "expected")
-    return read_csv(folder / legacy_fixture_path(filename))
+    frame = read_csv(folder / legacy_fixture_path(filename))
+    if seed and filename in FILES["ridership"]:
+        frame["noOfUTPQR" if "Daily" in filename else "UTP QR"] = "0"
+    return frame
+
+
+def api_fixture(script):
+    return FIXTURES / "api" / ("consistent_ridership.json" if script == "ridership" else "day1.json")
 
 
 @pytest.mark.parametrize("script", ["parking", "phpdt"])
@@ -119,7 +129,7 @@ def test_root_cli_without_pythonpath(script, tmp_path):
     env = {key: value for key, value in os.environ.items() if not key.startswith("PYTHON") and key != "DATASET_DATE"}
     output = tmp_path / "output"
     result = subprocess.run([sys.executable, "-E", "-m", f"collector.{script}",
-                             "--api-response", str(FIXTURES / "api/day1.json"),
+                             "--api-response", str(api_fixture(script)),
                              "--output-dir", str(output)], cwd=tmp_path, env=env,
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
@@ -172,7 +182,7 @@ def test_partial_response_can_be_completed(script, tmp_path, run_collector, api_
     response_file.write_text(json.dumps(partial), encoding="utf-8")
     output = tmp_path / "output"
     run_collector(script, "--api-response", response_file, "--output-dir", output)
-    run_collector(script, "--api-response", FIXTURES / "api/day1.json", "--output-dir", output)
+    run_collector(script, "--api-response", api_fixture(script), "--output-dir", output)
     for filename in FILES[script]:
         assert_frame_equal(canonical(read_csv(output / filename)), canonical(expected_csv(filename)))
 
@@ -381,7 +391,7 @@ def test_incoming_date_with_existing_csv(script, position, tmp_path, http_mock, 
             expected_seed = pd.concat([expected_seed[expected_seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
         elif position == "after_latest":
             expected_seed = expected_seed[expected_seed["Date"] == "2000-01-01"].reset_index(drop=True)
-        before[filename] = expected_seed
+        before[filename] = seed if position == "same_latest" and script == "ridership" else expected_seed
 
     run_collector(script)
     for filename, seed in before.items():
@@ -412,7 +422,7 @@ def test_parking_can_use_dataset_date_from_workflow(tmp_path, http_mock, run_col
 @pytest.mark.parametrize("script", FILES)
 def test_cli_file_input_matches_expected_csvs(script, tmp_path, http_mock, run_collector):
     output_dir = tmp_path / "separate output"
-    run_collector(script, "--api-response", FIXTURES / "api/day1.json",
+    run_collector(script, "--api-response", api_fixture(script),
                   "--output-dir", output_dir)
     assert len(http_mock.calls) == 0
     assert {path.relative_to(output_dir).as_posix() for path in output_dir.rglob("*.csv")} == set(FILES[script])
@@ -442,10 +452,10 @@ def test_cli_file_input_with_existing_csv(script, position, tmp_path, http_mock,
             expected_seed = pd.concat([expected_seed[expected_seed["Date"] == "2000-01-01"], incoming], ignore_index=True)
         elif position == "after_latest":
             expected_seed = expected_seed[expected_seed["Date"] == "2000-01-01"].reset_index(drop=True)
-        before[filename] = expected_seed
+        before[filename] = seed if position == "same_latest" and script == "ridership" else expected_seed
 
     for _ in range(2):
-        run_collector(script, "--api-response", FIXTURES / "api/day1.json",
+        run_collector(script, "--api-response", api_fixture(script),
                       "--output-dir", output_dir)
         for filename, seed in before.items():
             incoming = expected_csv(filename)
@@ -471,7 +481,8 @@ def test_parking_cli_file_input_with_workflow_date(tmp_path, http_mock, run_coll
 
 
 @pytest.mark.parametrize("workflow", ("daily_data_update.yml", "ridership_anomaly_retry.yml", "daily_phpdt_update.yml"))
-def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tmp_path, run_collector):
+@pytest.mark.parametrize("failure", (None, "commit", "rebase"))
+def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, failure, tmp_path, run_collector, snapshot_bundle, snapshot_clock):
     git = shutil.which("git")
     bash = str(Path(git).parent.parent / "bin/bash.exe") if os.name == "nt" and git else shutil.which("bash")
     if not git or not bash or not Path(bash).exists():
@@ -502,15 +513,12 @@ def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tm
     command("push", "-u", "origin", branch, cwd=first)
     command("clone", origin, runner, cwd=tmp_path)
 
-    cases = json.loads((FIXTURES / "idempotence/cases.json").read_text())["cases"]
-    payload = copy.deepcopy(cases["mixed"])
-    payload["hourly"]["categories"].append("2026-06-15T12:00:00")
-    for series in payload["hourly"]["series"]:
-        series["data"].append({"Total": 40, "Paper QR": 15, "Singara Chennai Card": 25}[series["name"]])
-    base = "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/"
-    bundle = {"responses": {base + endpoint + "/0": payload[name] for endpoint, name in (
-        ("allTicketCount", "daily"), ("hourlybaseddata", "hourly"), ("stationData", "station"),
-    )}}
+    bundle = copy.deepcopy(snapshot_bundle)
+    bundle["day"] = "0"
+    bundle["recorded_at_utc"] = "2026-11-06T12:00:00+00:00"
+    bundle["responses"] = {url[:-1] + "0": data for url, data in bundle["responses"].items()}
+    daily = next(data for url, data in bundle["responses"].items() if "allTicketCount" in url)
+    daily["totalTickets"] += 1
     response_file = tmp_path / "mixed.json"
     response_file.write_text(json.dumps(bundle), encoding="utf-8")
     script, arguments = "ridership", ("--day", "0")
@@ -524,9 +532,18 @@ def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tm
     assert error.value.code == 2
 
     (first / "remote_change.txt").write_text("unrelated remote change\n")
+    if failure == "rebase":
+        conflict_file = FILES[script][0]
+        (first / "data" / conflict_file).write_text("Date,Total\n2026-06-15,777\n")
+        command("add", "data/" + conflict_file, cwd=first)
     command("add", "remote_change.txt", cwd=first)
     command("commit", "-m", "test: remote change", cwd=first)
     command("push", cwd=first)
+    remote_before = command("--git-dir", origin, "rev-parse", branch, cwd=tmp_path)
+    if failure == "commit":
+        hook = runner / ".git/hooks/pre-commit"
+        hook.write_text("#!/bin/sh\nexit 1\n")
+        hook.chmod(0o755)
 
     root = Path(__file__).resolve().parents[1]
     document = yaml.safe_load((root / ".github/workflows" / workflow).read_text())
@@ -536,18 +553,24 @@ def test_workflow_commits_valid_updates_and_anomalies_before_rebase(workflow, tm
     for _ in range(2):
         result = subprocess.run([bash, "-e", "-c", commit_step["run"]], cwd=runner,
                                 env=env, capture_output=True, text=True, timeout=30)
+        if failure:
+            assert result.returncode != 0
+            assert command("--git-dir", origin, "rev-parse", branch, cwd=tmp_path) == remote_before
+            assert "data/discrepancies/anomaly_log.jsonl" not in command(
+                "--git-dir", origin, "ls-tree", "-r", "--name-only", branch, cwd=tmp_path).splitlines()
+            return
         assert result.returncode == 0, result.stderr
         assert command("status", "--porcelain", cwd=runner) == ""
     assert (runner / "remote_change.txt").read_text().strip() == "unrelated remote change"
     log = command("--git-dir", origin, "show", branch + ":data/discrepancies/anomaly_log.jsonl", cwd=tmp_path)
-    assert json.loads(log)["status"] == ("needs_review" if script == "phpdt" else "pending_retry")
+    assert json.loads(log)["status"] == ("needs_review" if script == "phpdt" else "published_provisional")
     if script == "phpdt":
         assert_frame_equal(read_csv(runner / "data" / FILES["phpdt"][0]), canonical(expected_csv(FILES["phpdt"][0])))
         pushed = command("--git-dir", origin, "show", branch + ":data/" + FILES["phpdt"][0], cwd=tmp_path)
         assert pushed == (runner / "data" / FILES["phpdt"][0]).read_text().strip()
     else:
         hourly = command("--git-dir", origin, "show", branch + ":data/ridership/ChennaiMetro_Hourly_Ridership.csv", cwd=tmp_path)
-        assert "2026-06-15,12:00,40,15,25" in hourly
+        assert "2026-11-06,06:00,270" in hourly
     report_step = steps[-1]
     reported = subprocess.run([bash, "-e", "-c", report_step["run"]], cwd=runner,
                               env={**env, "EXIT_CODE": "2"}, capture_output=True, text=True, timeout=30)
