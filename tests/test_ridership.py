@@ -237,8 +237,9 @@ def test_live_hour_coverage_only_requires_elapsed_core_hours(snapshot_bundle, co
     assert collect_snapshot(bundle, day="0").exit_code == 2
 
 
-def test_previous_nonzero_optional_hour_cannot_disappear(snapshot_bundle, collect_snapshot, tmp_path):
-    first = copy.deepcopy(snapshot_bundle)
+@pytest.mark.parametrize("day", ("0", "1"))
+def test_previous_nonzero_optional_hour_is_required_for_live_only(day, snapshot_bundle, collect_snapshot, tmp_path):
+    first = live_bundle(snapshot_bundle)
     hourly = payload(first, "hourlybaseddata")
     hourly["categories"].append("2026-11-06T01:00:00")
     for series in hourly["series"]:
@@ -246,13 +247,25 @@ def test_previous_nonzero_optional_hour_cannot_disappear(snapshot_bundle, collec
         series["data"].append(2 if active else 0)
         if active:
             series["data"][3] -= 2  # 06:00
-    assert collect_snapshot(first).exit_code == 0
+    assert collect_snapshot(first, day="0").exit_code == 0
     before = csvs(tmp_path)
-    snapshot_bundle["recorded_at_utc"] = "2026-11-07T05:00:00+00:00"
-    result = collect_snapshot(snapshot_bundle)
-    assert result.exit_code == 2
-    assert "01:00" in next(f["missing"] for f in result.findings if f["code"] == "missing_hours")
-    assert csvs(tmp_path) == before
+    incoming = live_bundle(snapshot_bundle, "2026-11-06T13:00:00+00:00") if day == "0" else snapshot_bundle
+    result = collect_snapshot(incoming, day=day)
+    if day == "0":
+        assert result.exit_code == 2
+        assert "01:00" in next(f["missing"] for f in result.findings if f["code"] == "missing_hours")
+        assert csvs(tmp_path) == before
+    else:
+        assert result.exit_code == 0 and result.status == "published_final"
+        removed = next(r for r in result.revisions if r["action"] == "removed")
+        assert removed["key"] == {"Date": "2026-11-06", "Hour": "01:00"}
+        assert next(d for d in removed["details"] if d["column"] == "Total")["existing"] == "2"
+        record = records(tmp_path)[-1]
+        assert record["compared_snapshot"]["day"] == "0"
+        prior_hours = record["compared_snapshot"]["rows"]["ridership_hourly"]
+        assert next(row for row in prior_hours if row["Hour"] == "01:00")["Total"] == "2"
+        published = pd.read_csv(tmp_path / "output" / ridership.HOURLY_FILENAME, dtype=str)
+        assert "01:00" not in set(published.Hour)
 
 
 def test_historical_roster_and_optional_modes(snapshot_bundle, collect_snapshot, tmp_path):

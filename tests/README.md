@@ -85,7 +85,8 @@ Coverage is date-aware: line 04 joins the observed roster on 2026-10-13 (54 pair
 instead of 43). UTP is required from that baseline; TVM from 2026-10-26.
 Core hourly slots are 00:00 and 04:00-23:00. Live snapshots require only elapsed
 slots, plus any previously published nonzero overnight slot for that date.
-Missing values are never invented zeros.
+For final `/1` data, 01:00-03:00 stay optional even if live counts were nonzero.
+Missing values are never invented zeros; removed rows are logged as revisions.
 
 ## publication and retries
 
@@ -106,9 +107,18 @@ date/cutoff no longer permits it. Tests mock sleeps and queue API responses.
 Offline validation uses `recorded_at_utc`; a missing/naive capture timestamp
 fails validation. Saved bundles retain URL-keyed responses, endpoint timings,
 the day selector and findings, and can be replayed with `--api-response`.
-Both attempts are retained after an initial failure. Accepted reductions also
-retain their payload. Fresh observations advance the publication watermark;
+Both attempts are retained after an initial failure. Accepted reductions and
+new final publications also retain their payload. Final records include a
+`compared_snapshot` with the previous archive rows for the same date and their publication source.
+This preserves the `/0` baseline on first finalization, including when `/1` is
+held. A previous `/1` or an untracked legacy archive is not labelled as `/0`.
+Fresh observations advance the publication watermark;
 replaying an identical capture creates no duplicate publication event.
+
+`final_2026-11-09.json` and `final_2026-11-10.json` are unchanged captured `/1`
+bundles from the discrepancy archive. Regression tests derive a synthetic live
+baseline in memory and verify that the final response can remove 01:00 while
+all required hours, arithmetic checks and the audit baseline remain intact.
 
 `python -m collector.ridership --retry` remains available for held `/0` data and
 legacy pending records. The background wait is 15 minutes; retries expire at

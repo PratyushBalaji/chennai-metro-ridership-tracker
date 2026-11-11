@@ -295,7 +295,7 @@ def validate_snapshot(snapshot, previous_hourly):
     if snapshot.day == "0":
         boundary = snapshot.captured_at.astimezone(IST).strftime("%H:00")
         required_hours = {hour for hour in required_hours if hour < boundary}
-    if not previous_hourly.empty:
+    if snapshot.day == "0" and not previous_hourly.empty:
         for _, row in previous_hourly.loc[previous_hourly["Date"] == snapshot.date].iterrows():
             if _count(row["Total"]) > 0:
                 required_hours.add(row["Hour"])
@@ -440,12 +440,14 @@ def _replace_date(existing, incoming, date, zero_column):
 
 
 def _revisions(existing, incoming, schema):
-    if existing.empty:
+    if existing.empty or incoming.empty:
         return []
+    existing = existing.loc[existing["Date"].isin(incoming["Date"])]
     index = {tuple(row[k] for k in schema.key_columns): row for row in existing.to_dict("records")}
-    changes = []
+    changes, incoming_keys = [], set()
     for row in incoming.to_dict("records"):
         key = {k: row[k] for k in schema.key_columns}
+        incoming_keys.add(tuple(key.values()))
         old = index.get(tuple(key.values()))
         if old is None:
             continue
@@ -459,6 +461,14 @@ def _revisions(existing, incoming, schema):
                                           else "incoming_value_increased"})
         if details:
             changes.append({"dataset": schema.name, "key": key, "action": "revised", "details": details})
+    for key, old in index.items():
+        if key not in incoming_keys:
+            changes.append({
+                "dataset": schema.name, "key": dict(zip(schema.key_columns, key)), "action": "removed",
+                "details": [{"column": column, "existing": value, "incoming": None,
+                             "reason": "incoming_row_missing"} for column, value in old.items()
+                            if column not in schema.key_columns and pd.notna(value) and value != ""],
+            })
     return changes
 
 
@@ -534,9 +544,10 @@ def collect_ridership(day="1", output_dir="data", dry_run=False, anomaly_log=ANO
         print(f"Dry run: {first.date}, validation {'passed' if first.valid else 'failed'}")
         return result
 
-    reductions = any(detail["reason"] == "incoming_value_decreased"
-                     for revision in revisions for detail in revision["details"])
-    if not first.valid or reductions:
+    reductions = any(revision["action"] == "removed" or any(
+        detail["reason"] == "incoming_value_decreased" for detail in revision["details"])
+        for revision in revisions)
+    if not first.valid or reductions or (day == "1" and selected and (changed or promotion)):
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + "-" + uuid4().hex[:8]
         result.raw_paths = [_archive_snapshot(item, output_dir, run_id, i) for i, item in enumerate(attempts, 1)]
     record = None
@@ -551,6 +562,17 @@ def collect_ridership(day="1", output_dir="data", dry_run=False, anomaly_log=ANO
             "findings": findings, "payload_paths": result.raw_paths,
             "attempts": [{"captured_at_utc": item.captured_at.isoformat(), "findings": item.findings} for item in attempts],
         })
+        if day == "1":
+            rows = {schema.name: old.loc[old["Date"] == first.date].to_dict("records") if not old.empty else []
+                    for old, schema in zip(existing, SCHEMAS)}
+            if any(rows.values()):
+                record["compared_snapshot"] = {
+                    "day": (previous or {}).get("day"),
+                    "status": (previous or {}).get("status"),
+                    "captured_at_utc": (previous or {}).get("captured_at_utc"),
+                    "utc_timestamp": (previous or {}).get("utc_timestamp"),
+                    "rows": rows,
+                }
     if changed:
         write_csv_group(outputs, after_write=lambda: append_jsonl(log_path, record))
     elif record is not None:

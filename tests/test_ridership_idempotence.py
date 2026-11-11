@@ -58,9 +58,11 @@ def log(tmp_path):
 def test_identical_replay_is_a_noop(snapshot_bundle, collect_snapshot, tmp_path):
     assert collect_snapshot(snapshot_bundle).exit_code == 0
     before = {**csv_bytes(tmp_path), log(tmp_path): log(tmp_path).read_bytes()}
+    evidence = set((tmp_path / "output").rglob("*.json"))
     result = collect_snapshot(snapshot_bundle)
     assert result.exit_code == 0 and not result.published
     assert {path: path.read_bytes() for path in before} == before
+    assert set((tmp_path / "output").rglob("*.json")) == evidence
 
 
 @pytest.mark.parametrize("count", (0, 4, 6))
@@ -88,7 +90,7 @@ def test_valid_revisions_replace_the_entire_day_and_preserve_history(count, snap
         assert replay.exit_code == 0
         assert pd.read_csv(tmp_path / "replay" / ridership.DAILY_FILENAME).Total.iloc[0] == 54 * count
     else:
-        assert not result.raw_paths
+        assert len(result.raw_paths) == 1
 
 
 def test_failed_final_does_not_accept_individual_good_rows(snapshot_bundle, collect_snapshot, tmp_path):
@@ -152,6 +154,81 @@ def test_final_promotes_live_snapshot_without_rewriting_csvs(snapshot_bundle, co
     result = collect_snapshot(snapshot_bundle)
     assert result.status == "published_final" and result.exit_code == 0
     assert csv_bytes(tmp_path) == before
+    record = read_last_record(log(tmp_path))
+    assert record["compared_snapshot"]["day"] == "0"
+    assert len(result.raw_paths) == 1
+
+
+@pytest.mark.parametrize("failure", ("arithmetic", "structure"))
+def test_held_final_preserves_the_live_values_it_was_compared_to(
+        failure, snapshot_bundle, collect_snapshot, tmp_path):
+    collect_snapshot(live(snapshot_bundle), day="0")
+    before = csv_bytes(tmp_path)
+    if failure == "arithmetic":
+        payload(snapshot_bundle, "allTicketCount")["totalTickets"] += 1
+    else:
+        payload(snapshot_bundle, "stationData").pop()
+    result = collect_snapshot(snapshot_bundle)
+    assert result.exit_code == 2 and not result.published
+    assert csv_bytes(tmp_path) == before
+    baseline = read_last_record(log(tmp_path))["compared_snapshot"]
+    assert baseline["day"] == "0" and baseline["status"] == "published_provisional"
+    assert baseline["captured_at_utc"] == "2026-11-06T12:00:00+00:00"
+    for name, frame in zip((s.name for s in ridership.SCHEMAS), frames(tmp_path)):
+        assert baseline["rows"][name] == frame.to_dict("records")
+
+
+def test_final_correction_does_not_mislabel_an_earlier_final_as_live(snapshot_bundle, collect_snapshot, tmp_path):
+    collect_snapshot(snapshot_bundle)
+    collect_snapshot(changed_counts(snapshot_bundle, 4))
+    baseline = read_last_record(log(tmp_path))["compared_snapshot"]
+    assert baseline["day"] == "1" and baseline["status"] == "published_final"
+    assert baseline["rows"]["ridership_daily"][0]["Total"] == "270"
+
+
+def test_legacy_archive_baseline_is_not_guessed_to_be_live(snapshot_bundle, collect_snapshot, tmp_path):
+    collect_snapshot(snapshot_bundle)
+    log(tmp_path).unlink()
+    collect_snapshot(changed_counts(snapshot_bundle, 4))
+    baseline = read_last_record(log(tmp_path))["compared_snapshot"]
+    assert baseline["day"] is None and baseline["captured_at_utc"] is None
+    assert baseline["rows"]["ridership_daily"][0]["Total"] == "270"
+
+
+@pytest.mark.parametrize("date,prior_count,total", (
+    ("2026-11-09", 1, 230346), ("2026-11-10", 5, 342598),
+))
+def test_captured_final_responses_can_remove_a_previously_nonzero_hour(
+        date, prior_count, total, collect_snapshot, snapshot_clock, tmp_path):
+    fixture = Path(__file__).parent / "fixtures/api" / f"final_{date}.json"
+    final = json.loads(fixture.read_text(encoding="utf-8"))
+    initial = live(final, date + "T12:00:00+00:00")
+    hourly = payload(initial, "hourlybaseddata")
+    six = next(i for i, value in enumerate(hourly["categories"]) if value[11:16] == "06:00")
+    hourly["categories"].append(date + "T01:00:00.000Z")
+    for series in hourly["series"]:
+        active = series["name"] in ("Total", "Singara Chennai Card")
+        series["data"].append(prior_count if active else 0)
+        if active:
+            series["data"][six] -= prior_count
+    # This derived live baseline is synthetic; the final fixture stays unchanged.
+    initial.pop("response_timestamps")
+    initial["finished_at_utc"] = initial["recorded_at_utc"]
+    snapshot_clock.now.return_value = datetime.fromisoformat(initial["recorded_at_utc"])
+    assert collect_snapshot(initial, day="0").exit_code == 0
+    snapshot_clock.now.return_value = datetime.fromisoformat(final["recorded_at_utc"])
+    result = collect_snapshot(final)
+    assert result.exit_code == 0 and result.status == "published_final"
+    actual = frames(tmp_path)
+    assert [pd.to_numeric(frame.Total).sum() for frame in actual] == [total, total, total]
+    assert "01:00" not in set(actual[1].Hour)
+    assert any(r["action"] == "removed" and r["key"]["Hour"] == "01:00" for r in result.revisions)
+    record = read_last_record(log(tmp_path))
+    prior = record["compared_snapshot"]["rows"]["ridership_hourly"]
+    assert next(row for row in prior if row["Hour"] == "01:00")["Total"] == str(prior_count)
+    before = {**csv_bytes(tmp_path), log(tmp_path): log(tmp_path).read_bytes()}
+    assert not collect_snapshot(final).published
+    assert {path: path.read_bytes() for path in before} == before
 
 
 @pytest.mark.parametrize("valid", (True, False))
