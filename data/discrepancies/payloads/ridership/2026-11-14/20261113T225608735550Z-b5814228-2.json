@@ -1,0 +1,437 @@
+{
+  "recorded_at_utc": "2026-11-13T22:55:57.516128+00:00",
+  "finished_at_utc": "2026-11-13T22:56:08.733730+00:00",
+  "response_timestamps": {
+    "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/allTicketCount/0": {
+      "started_at_utc": "2026-11-13T22:55:57.516133+00:00",
+      "finished_at_utc": "2026-11-13T22:56:01.224074+00:00"
+    },
+    "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/hourlybaseddata/0": {
+      "started_at_utc": "2026-11-13T22:56:01.224084+00:00",
+      "finished_at_utc": "2026-11-13T22:56:05.052173+00:00"
+    },
+    "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/stationData/0": {
+      "started_at_utc": "2026-11-13T22:56:05.052182+00:00",
+      "finished_at_utc": "2026-11-13T22:56:08.733719+00:00"
+    }
+  },
+  "day": "0",
+  "date": "2026-11-14",
+  "validation": [
+    {
+      "kind": "structural",
+      "code": "empty_hourly"
+    },
+    {
+      "kind": "structural",
+      "code": "missing_hours",
+      "missing": [
+        "00:00"
+      ]
+    },
+    {
+      "kind": "structural",
+      "code": "station_coverage",
+      "missing": [
+        [
+          "01",
+          "SAL"
+        ],
+        [
+          "01",
+          "SAP"
+        ],
+        [
+          "01",
+          "SCC"
+        ],
+        [
+          "01",
+          "SCR"
+        ],
+        [
+          "01",
+          "SGE"
+        ],
+        [
+          "01",
+          "SGM"
+        ],
+        [
+          "01",
+          "SGU"
+        ],
+        [
+          "01",
+          "SHC"
+        ],
+        [
+          "01",
+          "SKP"
+        ],
+        [
+          "01",
+          "SLI"
+        ],
+        [
+          "01",
+          "SLM"
+        ],
+        [
+          "01",
+          "SMA"
+        ],
+        [
+          "01",
+          "SME"
+        ],
+        [
+          "01",
+          "SNW"
+        ],
+        [
+          "01",
+          "SOT"
+        ],
+        [
+          "01",
+          "SSA"
+        ],
+        [
+          "01",
+          "STC"
+        ],
+        [
+          "01",
+          "STE"
+        ],
+        [
+          "01",
+          "STG"
+        ],
+        [
+          "01",
+          "STL"
+        ],
+        [
+          "01",
+          "STR"
+        ],
+        [
+          "01",
+          "STT"
+        ],
+        [
+          "01",
+          "STV"
+        ],
+        [
+          "01",
+          "SWA"
+        ],
+        [
+          "01",
+          "SWD"
+        ],
+        [
+          "01",
+          "SWN"
+        ],
+        [
+          "02",
+          "SAE"
+        ],
+        [
+          "02",
+          "SAL"
+        ],
+        [
+          "02",
+          "SAN"
+        ],
+        [
+          "02",
+          "SAR"
+        ],
+        [
+          "02",
+          "SAT"
+        ],
+        [
+          "02",
+          "SCC"
+        ],
+        [
+          "02",
+          "SCM"
+        ],
+        [
+          "02",
+          "SEG"
+        ],
+        [
+          "02",
+          "SKM"
+        ],
+        [
+          "02",
+          "SKO"
+        ],
+        [
+          "02",
+          "SMM"
+        ],
+        [
+          "02",
+          "SNP"
+        ],
+        [
+          "02",
+          "SPC"
+        ],
+        [
+          "02",
+          "SSI"
+        ],
+        [
+          "02",
+          "SSN"
+        ],
+        [
+          "02",
+          "STI"
+        ],
+        [
+          "02",
+          "SVA"
+        ],
+        [
+          "04",
+          "IYP"
+        ],
+        [
+          "04",
+          "KAC"
+        ],
+        [
+          "04",
+          "KPM"
+        ],
+        [
+          "04",
+          "KUC"
+        ],
+        [
+          "04",
+          "MUL"
+        ],
+        [
+          "04",
+          "PBP"
+        ],
+        [
+          "04",
+          "POB"
+        ],
+        [
+          "04",
+          "POO"
+        ],
+        [
+          "04",
+          "PRJ"
+        ],
+        [
+          "04",
+          "SVA"
+        ],
+        [
+          "04",
+          "THL"
+        ]
+      ],
+      "unexpected": []
+    }
+  ],
+  "responses": {
+    "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/allTicketCount/0": {
+      "totalTickets": 0,
+      "noOfSVC": 0,
+      "noOfNCMCcard": 0,
+      "noOfMobileQR": 0,
+      "noOfStaticQR": 0,
+      "noOfPaperQR": 0,
+      "noOfPaytmQR": 0,
+      "noOfWhatsAppQR": 0,
+      "noOfPhonePeQR": 0,
+      "totalQrCount": 0,
+      "noOfPromotionalRideQR": 0,
+      "noOfTripcard": 0,
+      "noOfTouristCard": 0,
+      "noOfToken": 0,
+      "noOfGroupCard": 0,
+      "noOfTotal_QR": 0,
+      "noOfCards": 0,
+      "totalCards": 0,
+      "noOfRedBusQR": 0,
+      "noOfRapidoQR": 0,
+      "noOfJusPayQR": 0,
+      "noOfONDCQR": 0,
+      "noOfSVP": 0,
+      "noOfEventQR": 0,
+      "noOfUberQR": 0,
+      "noOfCumtaQR": 0,
+      "noOfMilesKilometersQR": 0,
+      "noOfUTPQR": 0,
+      "noOfTVM": 0
+    },
+    "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/hourlybaseddata/0": {
+      "line": null,
+      "series": [
+        {
+          "name": "Total",
+          "type": "column",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Store Value Card",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Singara Chennai Card",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Paper QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "SVP QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Mobile QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Event QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Static QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "WhatsApp QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Paytm QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "PhonePe QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Integrated QR (CUMTA)",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Promotional Ride QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "RedBus QR (ONDC)",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Rapido QR (ONDC)",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Namma Yatri QR (ONDC)",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Uber QR (ONDC)",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "Miles & Km QR (ONDC)",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "UTP QR",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        },
+        {
+          "name": "TVM",
+          "type": "line",
+          "backgroundColor": null,
+          "borderColor": null,
+          "data": []
+        }
+      ],
+      "categories": [],
+      "color": null
+    },
+    "https://commuters-dataapi.chennaimetrorail.org/api/PassengerFlow/stationData/0": []
+  }
+}
